@@ -116,7 +116,8 @@ export async function POST(req: Request) {
         message: reviewReason || `Matched → ${matchedPatient?.fullName}`,
       });
     } catch (err: any) {
-      results.push({ fileName: file.name, status: "error", message: err.message });
+      const diag = (err?.stack || err?.message || String(err)).split("\n").slice(0, 6).join(" ~ ");
+      results.push({ fileName: file.name, status: "error", message: `${err?.message} | node ${process.version} | ${diag}` });
     }
   }
 
