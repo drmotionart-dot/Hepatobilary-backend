@@ -24,6 +24,10 @@ export async function fillLabPanel(
         category: mapping.category,
         test: mapping.internalTestKey,
         value: t.result,
+        unit: t.unit,
+        refRange: t.refRange,
+        abnormal: t.abnormal,
+        abnormalFlag: t.abnormalFlag,
       };
     });
 

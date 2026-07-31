@@ -188,6 +188,7 @@ interface PartialTest {
   unit: string;
   refRange: string;
   abnormal: boolean;
+  abnormalFlag?: "H" | "L";
 }
 
 function startTest(line: string): PartialTest {
@@ -212,6 +213,7 @@ function pushTest(
     refRange: test.refRange || undefined,
     category: mapped?.category || "Others",
     abnormal: test.abnormal || undefined,
+    abnormalFlag: test.abnormalFlag,
   });
 }
 
@@ -240,7 +242,10 @@ function parseValueFirstTable(
     }
 
     if (line === "H" || line === "L") {
-      if (current) current.abnormal = true;
+      if (current) {
+        current.abnormal = true;
+        current.abnormalFlag = line as "H" | "L";
+      }
       i++;
       continue;
     }
@@ -312,6 +317,7 @@ function parseNameFirstTable(
       }
       if (l === "H" || l === "L") {
         test.abnormal = true;
+        test.abnormalFlag = l as "H" | "L";
         i++;
         continue;
       }

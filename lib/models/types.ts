@@ -136,6 +136,10 @@ export interface LabResultEntry {
   category: LabCategory;
   test: string;
   value: string;
+  unit?: string;
+  refRange?: string;
+  abnormal?: boolean;
+  abnormalFlag?: "H" | "L";
 }
 
 export interface LabPanel {
@@ -158,6 +162,7 @@ export interface LabImportExtractedTest {
   refRange?: string;
   category?: LabCategory;
   abnormal?: boolean;
+  abnormalFlag?: "H" | "L";
 }
 
 export interface LabImport {
@@ -198,7 +203,10 @@ export interface ReferralConsult {
   referredBy: ObjectId;
   referredAt: Date;
   status: "pending" | "reviewed";
-  reviewNoteId?: ObjectId | null;
+  recommendations?: string | null;
+  imageData?: string | null;
+  reviewedAt?: Date | null;
+  reviewedBy?: ObjectId | null;
 }
 
 export interface TreatmentLogEntry {

@@ -14,7 +14,23 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const existing = await db.collection<ReferralConsult>("referralConsults").findOne({ _id: toObjectId(params.id) });
   if (!existing) return Response.json({ error: "Not found" }, { status: 404 });
 
-  await db.collection<ReferralConsult>("referralConsults").updateOne({ _id: existing._id }, { $set: body });
+  const update: Record<string, unknown> = { ...body };
+  delete update.reviewedBy;
+  delete update.reviewedAt;
+
+  if (update.status === "reviewed") {
+    if (!existing.recommendations && !existing.imageData && !update.recommendations && !update.imageData) {
+      return Response.json({ error: "Add recommendations or attach a photo before marking done" }, { status: 400 });
+    }
+    update.reviewedAt = new Date();
+    update.reviewedBy = userId;
+  }
+  if (update.status === "pending") {
+    update.reviewedAt = null;
+    update.reviewedBy = null;
+  }
+
+  await db.collection<ReferralConsult>("referralConsults").updateOne({ _id: existing._id }, { $set: update });
 
   await logAudit({
     collection: "referralConsults",

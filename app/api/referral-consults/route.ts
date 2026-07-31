@@ -36,7 +36,6 @@ export async function POST(req: Request) {
     referredBy: userId,
     referredAt: new Date(),
     status: "pending",
-    reviewNoteId: null,
   };
   const res = await db.collection<ReferralConsult>("referralConsults").insertOne(doc);
 

@@ -27,13 +27,21 @@ export async function POST(req: Request) {
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();
-  const { encounterId, date, category, test, value } = body;
+  const { encounterId, date, category, test, value, unit, refRange, abnormal } = body;
   if (!encounterId || !test) {
     return Response.json({ error: "encounterId and test are required" }, { status: 400 });
   }
 
   const db = await getDb();
-  const entry = { date: date ? new Date(date) : new Date(), category: category || "Others", test, value: value || "" };
+  const entry = {
+    date: date ? new Date(date) : new Date(),
+    category: category || "Others",
+    test,
+    value: value || "",
+    ...(unit ? { unit } : {}),
+    ...(refRange ? { refRange } : {}),
+    ...(abnormal !== undefined ? { abnormal } : {}),
+  };
   const existing = await db.collection<LabPanel>("labPanels").findOne({ encounterId: toObjectId(encounterId) });
 
   if (existing) {
