@@ -46,9 +46,9 @@ export async function fillLabPanel(
       performedBy: userId,
     });
   } else {
-    const dateStr = date.toDateString();
+    const dateStr = date.toISOString().slice(0, 10);
     const existingKeys = new Set(
-      (panel.results || []).filter((r) => new Date(r.date).toDateString() === dateStr).map((r) => r.test)
+      (panel.results || []).filter((r) => new Date(r.date).toISOString().slice(0, 10) === dateStr).map((r) => r.test)
     );
     const newResults = mappedResults.filter((r) => !existingKeys.has(r.test));
     if (newResults.length > 0) {

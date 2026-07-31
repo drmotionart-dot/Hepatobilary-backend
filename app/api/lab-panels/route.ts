@@ -46,7 +46,7 @@ export async function POST(req: Request) {
 
   if (existing) {
     const already = (existing.results || []).some(
-      (r) => r.test === test && new Date(r.date).toDateString() === entry.date.toDateString()
+      (r) => r.test === test && new Date(r.date).toISOString().slice(0, 10) === entry.date.toISOString().slice(0, 10)
     );
     if (already) {
       return Response.json({ error: "Test already recorded for this date" }, { status: 409 });
