@@ -65,6 +65,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const update: Record<string, unknown> = { ...body };
   delete update.patientId;
 
+  if (body.type && body.type !== encounter.type) {
+    if (body.type === "ward") {
+      if (!["male", "female"].includes(body.ward)) {
+        return Response.json({ error: "ward (male|female) is required to admit to ward" }, { status: 400 });
+      }
+      update.ward = body.ward;
+    } else if (body.type === "emergency") {
+      update.ward = ["male", "female"].includes(body.ward) ? body.ward : null;
+    } else {
+      return Response.json({ error: "Invalid encounter type" }, { status: 400 });
+    }
+  }
+
   if (body.status === "closed" || body.status === "discharged") {
     update.closedAt = new Date();
   }
