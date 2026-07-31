@@ -7,7 +7,8 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 import { MongoClient, ObjectId } from "mongodb";
 import bcrypt from "bcryptjs";
-import type { CaseTypeTemplate, RoleSlotDefinition, LabTestNameMapping } from "../lib/models/types";
+import type { CaseTypeTemplate, RoleSlotDefinition } from "../lib/models/types";
+import { labTestNameMappings } from "./lab-test-mappings";
 
 const uri = process.env.MONGODB_URI;
 if (!uri) throw new Error("Missing MONGODB_URI in .env.local");
@@ -112,28 +113,8 @@ const roleSlotDefinitions: RoleSlotDefinition[] = [
   { dayType: "emergency", personType: "resident", shiftType: "24hr", category: "emergency-route", label: "Emergency-route resident" }
 ];
 
-// Section 3.13a: lab PDF → internal test name mapping (grows over time via admin)
-const labTestNameMappings: LabTestNameMapping[] = [
-  { externalTestName: "SGPT (ALT)", internalTestKey: "ALT", category: "LiverFTs" },
-  { externalTestName: "SGOT (AST)", internalTestKey: "AST", category: "LiverFTs" },
-  { externalTestName: "Blood Urea", internalTestKey: "Urea", category: "RFTs" },
-  { externalTestName: "S. Creatinine", internalTestKey: "Creatinine", category: "RFTs" },
-  { externalTestName: "Sodium (Na)", internalTestKey: "Sodium", category: "Electrolytes" },
-  { externalTestName: "Potassium (K)", internalTestKey: "Potassium", category: "Electrolytes" },
-  { externalTestName: "#Haemoglobin", internalTestKey: "HGB", category: "CBC" },
-  { externalTestName: "WBCs", internalTestKey: "WBC", category: "CBC" },
-  { externalTestName: "Platelets", internalTestKey: "PLT", category: "CBC" },
-  { externalTestName: "PT", internalTestKey: "PT", category: "Coagulation" },
-  { externalTestName: "PTT", internalTestKey: "PTT", category: "Coagulation" },
-  { externalTestName: "INR", internalTestKey: "INR", category: "Coagulation" },
-  { externalTestName: "S. Albumin", internalTestKey: "Albumin", category: "LiverFTs" },
-  { externalTestName: "T. Protein", internalTestKey: "TotalProtein", category: "LiverFTs" },
-  { externalTestName: "T. Bilirubin", internalTestKey: "TotalBilirubin", category: "LiverFTs" },
-  { externalTestName: "D. Bilirubin", internalTestKey: "DirectBilirubin", category: "LiverFTs" },
-  { externalTestName: "ALP", internalTestKey: "AlkPhosphatase", category: "LiverFTs" },
-  { externalTestName: "HBsAg", internalTestKey: "HBsAg", category: "Virology" },
-  { externalTestName: "HCV Ab", internalTestKey: "HCVAb", category: "Virology" }
-];
+// Section 3.13a: lab PDF → internal test name mapping lives in
+// scripts/lab-test-mappings.ts and is upserted by scripts/seed-lab-mappings.ts.
 
 async function seed() {
   const client = new MongoClient(uri as string);

@@ -157,6 +157,7 @@ export interface LabImportExtractedTest {
   unit?: string;
   refRange?: string;
   category?: LabCategory;
+  abnormal?: boolean;
 }
 
 export interface LabImport {

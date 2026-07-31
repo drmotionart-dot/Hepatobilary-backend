@@ -2,7 +2,8 @@ import { requireSession } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import { toObjectId } from "@/lib/api";
-import type { LabImport, LabImportExtractedTest, LabPanel, LabTestNameMapping, Patient, Encounter } from "@/lib/models/types";
+import { fillLabPanel, normalizeName } from "@/lib/lab-panel";
+import type { LabImport, LabImportExtractedTest, LabTestNameMapping, Patient, Encounter } from "@/lib/models/types";
 
 export async function GET(req: Request) {
   const session = await requireSession();
@@ -42,18 +43,20 @@ export async function POST(req: Request) {
 
   const db = await getDb();
   const mappings = await db.collection<LabTestNameMapping>("labTestNameMappings").find().toArray();
-  const mappingMap = new Map(mappings.map((m) => [m.externalTestName.toLowerCase().trim(), m]));
+  const mappingMap = new Map(mappings.map((m) => [normalizeName(m.externalTestName), m]));
 
   const results: { fileName: string; status: string; message: string }[] = [];
 
   for (const file of files) {
     try {
       const buffer = Buffer.from(await file.arrayBuffer());
-      const { PDFParse } = await import("pdf-parse");
-      const parser = new PDFParse({ data: buffer });
-      const result = await parser.getText();
+      const parsePdf = (await import("pdf-parse")).default;
+      const result = await parsePdf(buffer);
       const text = result?.text || "";
-      const lines = text.split("\n").map((l: string) => l.trim()).filter(Boolean);
+      const lines = text
+        .split("\n")
+        .map((l: string) => l.trim())
+        .filter((l) => l && /[A-Za-z0-9%]/.test(l));
 
       const header = parseHeader(lines);
       if (!header) {
@@ -126,108 +129,218 @@ export async function POST(req: Request) {
   });
 }
 
+// The PDF layout is value-above-label in the header (e.g. "679053" above
+// "Patient Code"), and each panel uses a different table orientation:
+//  - Chemistry/Coagulation: name → [H/L marker] → value → unit → ref range
+//  - CBC: name+value glued on one line → unit → [H/L marker] → ref range
+// Arabic labels extract as mojibake, so only ASCII lines are parsed.
+const REF_RANGE_RE = /^[\d.]+\s*-\s*[\d.]+$/;
+const NAME_VALUE_RE = /^([#A-Za-z][A-Za-z.\s#]*?)(\d+(?:\.\d+)?)$/;
+
+function stripHash(name: string): string {
+  return name.replace(/^#/, "").trim();
+}
+
 function parseHeader(lines: string[]) {
   let patientCode = "";
   let requestDate: Date | null = null;
 
-  for (const line of lines) {
-    const codeMatch = line.match(/(?:Patient Code|Code|رقم المريض)\s*[:\-]\s*(\S+)/i);
-    if (codeMatch) patientCode = codeMatch[1];
-
-    const dateMatch = line.match(/(?:Request Date|Date|التاريخ)\s*[:\-]\s*(\S+)/i);
-    if (dateMatch) requestDate = new Date(dateMatch[1]);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^Patient Code$/i.test(line)) {
+      const prev = lines[i - 1] || "";
+      const next = lines[i + 1] || "";
+      if (/^\d+$/.test(prev)) patientCode = prev;
+      else if (/^\d+$/.test(next)) patientCode = next;
+    }
+    const dateMatch = line.match(/(\d{2}\/\d{2}\/\d{4})\s+\d{1,2}:\d{2}/);
+    if (dateMatch && !requestDate) {
+      const [d, m, y] = dateMatch[1].split("/").map(Number);
+      requestDate = new Date(y, m - 1, d);
+    }
   }
 
   if (!patientCode) return null;
   return { patientCode, requestDate: requestDate || new Date() };
 }
 
-function parseTestTable(lines: string[], mappingMap: Map<string, LabTestNameMapping>) {
-  const tests: LabImportExtractedTest[] = [];
-  let inTable = false;
+function isFooterLine(line: string): boolean {
+  return (
+    /^Page \d+ of \d+/i.test(line) ||
+    /^Runs on analyzer/i.test(line) ||
+    /^Perform Date/i.test(line) ||
+    /^Review Date/i.test(line) ||
+    /^Reviewed by/i.test(line) ||
+    line === "DIM_II Main" ||
+    line === "Xn1000 Main"
+  );
+}
 
-  for (const line of lines) {
-    if (/Test\s*Result\s*Unit\s*Ref/i.test(line)) {
-      inTable = true;
+function isRefRange(line: string): boolean {
+  const t = line.trim();
+  return REF_RANGE_RE.test(t) || /^\/\s*100\s*WBCs/i.test(t) || t === "()" || t === "( )";
+}
+
+interface PartialTest {
+  externalTestName: string;
+  result: string;
+  unit: string;
+  refRange: string;
+  abnormal: boolean;
+}
+
+function startTest(line: string): PartialTest {
+  const glued = line.match(/^(.*[)\]])\s*(\d+(?:\.\d+)?)$/);
+  if (glued) {
+    return { externalTestName: stripHash(glued[1]), result: glued[2], unit: "", refRange: "", abnormal: false };
+  }
+  return { externalTestName: stripHash(line), result: "", unit: "", refRange: "", abnormal: false };
+}
+
+function pushTest(
+  test: PartialTest,
+  tests: LabImportExtractedTest[],
+  mappingMap: Map<string, LabTestNameMapping>
+) {
+  if (!test.result) return;
+  const mapped = mappingMap.get(normalizeName(test.externalTestName));
+  tests.push({
+    externalTestName: test.externalTestName,
+    result: test.result,
+    unit: test.unit || undefined,
+    refRange: test.refRange || undefined,
+    category: mapped?.category || "Others",
+    abnormal: test.abnormal || undefined,
+  });
+}
+
+// Chemistry & Coagulation: name → [H/L] → value → unit → ref range, each on
+// its own line (a trailing value may be glued to a paren-ended name).
+function parseValueFirstTable(
+  lines: string[],
+  start: number,
+  tests: LabImportExtractedTest[],
+  mappingMap: Map<string, LabTestNameMapping>
+) {
+  let i = start + 1;
+  let current: PartialTest | null = null;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (isFooterLine(line)) break;
+
+    if (current && isRefRange(line)) {
+      current.refRange = line;
+      pushTest(current, tests, mappingMap);
+      current = null;
+      i++;
       continue;
     }
 
-    if (inTable) {
-      if (/^\s*-+\s*$/.test(line) || /Page\s+\d+/i.test(line)) continue;
-
-      const parts = line.split(/\s{2,}/);
-      if (parts.length >= 2) {
-        const externalTestName = parts[0].trim();
-        const result = parts[1]?.trim() || "";
-        const unit = parts[2]?.trim() || "";
-        const refRange = parts.slice(3).join(" ").trim();
-        const mapped = mappingMap.get(externalTestName.toLowerCase());
-
-        tests.push({
-          externalTestName,
-          result,
-          unit,
-          refRange,
-          category: mapped?.category || "Others",
-        });
-      }
+    if (line === "H" || line === "L") {
+      if (current) current.abnormal = true;
+      i++;
+      continue;
     }
+
+    if (!current) {
+      current = startTest(line);
+      i++;
+      continue;
+    }
+
+    if (current.result && current.unit) {
+      pushTest(current, tests, mappingMap);
+      current = null;
+      continue;
+    }
+
+    if (!current.result && /^[\d.,\s/-]+$/.test(line)) {
+      current.result = line;
+      i++;
+      continue;
+    }
+
+    if (current.result && !current.unit && !line.startsWith("#") && !line.includes("(")) {
+      current.unit = line;
+      i++;
+      continue;
+    }
+
+    i++;
   }
 
-  return tests;
+  if (current) pushTest(current, tests, mappingMap);
 }
 
-async function fillLabPanel(
-  encounterId: any,
-  date: Date,
+// CBC: name and value are glued on one line (e.g. "#Haemoglobin15.2"),
+// followed by unit, optional H/L marker and stray parens, then the ref range.
+function parseNameFirstTable(
+  lines: string[],
+  start: number,
   tests: LabImportExtractedTest[],
-  mappingMap: Map<string, LabTestNameMapping>,
-  userId: any
+  mappingMap: Map<string, LabTestNameMapping>
 ) {
-  const mappedResults = tests
-    .filter((t) => mappingMap.has(t.externalTestName.toLowerCase()))
-    .map((t) => {
-      const mapping = mappingMap.get(t.externalTestName.toLowerCase())!;
-      return {
-        date,
-        category: mapping.category,
-        test: mapping.internalTestKey,
-        value: t.result,
-      };
-    });
+  let i = start + 1;
 
-  if (mappedResults.length === 0) return;
+  while (i < lines.length) {
+    const line = lines[i];
 
-  const db = await getDb();
-  const panel = await db.collection<LabPanel>("labPanels").findOne({ encounterId });
+    if (isFooterLine(line) || line.includes("TestResult") || line.includes("Parameter")) break;
+    if (line.startsWith("(") || line.startsWith(")") || /^[\d.,]+$/.test(line)) {
+      i++;
+      continue;
+    }
 
-  if (!panel) {
-    const res = await db.collection<LabPanel>("labPanels").insertOne({ encounterId, results: mappedResults });
-    await logAudit({
-      collection: "labPanels",
-      documentId: res.insertedId,
-      action: "create",
-      summary: "Lab panel auto-filled from PDF import",
-      performedBy: userId,
-    });
-  } else {
-    const dateStr = date.toDateString();
-    const existingKeys = new Set(
-      (panel.results || []).filter((r) => new Date(r.date).toDateString() === dateStr).map((r) => r.test)
-    );
-    const newResults = mappedResults.filter((r) => !existingKeys.has(r.test));
-    if (newResults.length > 0) {
-      await db.collection<LabPanel>("labPanels").updateOne(
-        { _id: panel._id },
-        { $push: { results: { $each: newResults } } }
-      );
-      await logAudit({
-        collection: "labPanels",
-        documentId: panel._id,
-        action: "update",
-        summary: `Lab panel appended ${newResults.length} results from PDF import`,
-        performedBy: userId,
-      });
+    const m = line.match(NAME_VALUE_RE);
+    if (!m || m[1].trim().length < 2) {
+      i++;
+      continue;
+    }
+
+    const test: PartialTest = { externalTestName: stripHash(m[1]), result: m[2], unit: "", refRange: "", abnormal: false };
+    i++;
+
+    while (i < lines.length) {
+      const l = lines[i];
+      if (isFooterLine(l) || l.includes("TestResult") || l.includes("Parameter")) break;
+      if (l === "(" || l === ")") {
+        i++;
+        continue;
+      }
+      if (l === "H" || l === "L") {
+        test.abnormal = true;
+        i++;
+        continue;
+      }
+      if (isRefRange(l)) {
+        test.refRange = l;
+        i++;
+        break;
+      }
+      if (NAME_VALUE_RE.test(l)) break;
+      if (!test.unit) {
+        test.unit = l;
+        i++;
+        continue;
+      }
+      i++;
+    }
+
+    pushTest(test, tests, mappingMap);
+  }
+}
+
+function parseTestTable(lines: string[], mappingMap: Map<string, LabTestNameMapping>) {
+  const tests: LabImportExtractedTest[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.includes("TestResult")) {
+      parseValueFirstTable(lines, i, tests, mappingMap);
+    } else if (line.includes("Parameter")) {
+      parseNameFirstTable(lines, i, tests, mappingMap);
     }
   }
+  return tests;
 }

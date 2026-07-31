@@ -3,6 +3,7 @@ import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import { toObjectId } from "@/lib/api";
 import type { LabImport, Patient } from "@/lib/models/types";
+import { fillLabPanel, normalizeName } from "@/lib/lab-panel";
 
 // Resolve a "needs-review" lab import: link it to a patient code (creating a
 // Patient if needed) and re-attempt auto-matching to an active encounter.
@@ -38,7 +39,8 @@ export async function POST(req: Request) {
     return Response.json({ error: "Patient not found — provide medicalNumber and fullName to create one" }, { status: 400 });
   }
 
-  // Re-attempt matching: link any active encounter for this patient.
+  // Re-attempt matching: link any active encounter for this patient and
+  // populate its lab panel from the extracted tests (same as a direct match).
   const encounter = await db.collection("encounters")
     .findOne({ patientId: patient._id, status: "active" }, { sort: { openedAt: -1 } as any });
 
@@ -47,7 +49,16 @@ export async function POST(req: Request) {
     status: "matched",
     reviewReason: null,
   };
-  if (encounter) update.matchedEncounterId = encounter._id;
+  if (encounter) {
+    update.matchedEncounterId = encounter._id;
+    if (labImport.extractedTests?.length > 0) {
+      const mappings = await db.collection("labTestNameMappings").find().toArray();
+      const mappingMap = new Map(
+        (mappings as any[]).map((m) => [normalizeName(m.externalTestName), m])
+      );
+      await fillLabPanel(encounter._id, labImport.requestDate, labImport.extractedTests, mappingMap, userId);
+    }
+  }
 
   await db.collection<LabImport>("labImports").updateOne(
     { _id: labImport._id },
