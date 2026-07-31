@@ -48,7 +48,6 @@ export type Sex = "male" | "female";
 export interface Patient {
   _id?: ObjectId;
   medicalNumber: string;
-  labPatientCode?: string | null; // linked once matched via LabImport, see 3.13a
   fullName: string;
   sex: Sex;
   age: number;
@@ -57,7 +56,8 @@ export interface Patient {
 }
 
 export type EncounterType = "emergency" | "ward" | "clinic";
-export type CaseType = "hernia" | "biliary" | "hepatic" | "generic";
+export type CaseType = "hernia" | "biliary" | "hepatic" | "custom";
+export type TemplateUsed = "hernia" | "biliary" | "hepatic" | "generic";
 export type EncounterStatus = "active" | "discharged" | "follow-up-pending" | "closed" | "referred-out";
 
 export interface Encounter {
@@ -65,6 +65,7 @@ export interface Encounter {
   patientId: ObjectId;
   type: EncounterType;
   caseType: CaseType;
+  customCaseTypeLabel?: string | null; // free-text name when caseType === "custom", e.g. "Appendicitis"
   status: EncounterStatus;
   ward?: Sex | null;
   openedAt: Date;
@@ -101,7 +102,7 @@ export interface ClinicalNote {
     echoRequired: boolean;
     echoDone: boolean;
   };
-  localExam: { templateUsed: CaseType; fields: Record<string, unknown> };
+  localExam: { templateUsed: TemplateUsed; fields: Record<string, unknown> };
   riskFactors: Record<string, unknown>;
   investigationsOrdered: string[];
   recommendation: string;

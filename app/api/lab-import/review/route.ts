@@ -27,17 +27,11 @@ export async function POST(req: Request) {
       fullName,
       sex: "male",
       age: 0,
-      labPatientCode: labImport.patientCode,
       createdAt: now,
       updatedAt: now,
     };
     const res = await db.collection<Patient>("patients").insertOne(patient);
     patient._id = res.insertedId;
-  } else if (patient && !patient.labPatientCode) {
-    await db.collection<Patient>("patients").updateOne(
-      { _id: patient._id },
-      { $set: { labPatientCode: labImport.patientCode } }
-    );
   }
 
   if (!patient) {

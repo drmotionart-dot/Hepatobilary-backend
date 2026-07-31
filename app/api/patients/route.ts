@@ -18,7 +18,6 @@ export async function GET(req: Request) {
     filter.$or = [
       { medicalNumber: { $regex: q, $options: "i" } },
       { fullName: { $regex: q, $options: "i" } },
-      { labPatientCode: { $regex: q, $options: "i" } },
     ];
   }
 
@@ -38,7 +37,7 @@ export async function POST(req: Request) {
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();
-  const { medicalNumber, fullName, sex, age, labPatientCode } = body;
+  const { medicalNumber, fullName, sex, age } = body;
   if (!medicalNumber || !fullName || !sex || !age) {
     return Response.json({ error: "medicalNumber, fullName, sex and age are required" }, { status: 400 });
   }
@@ -55,7 +54,6 @@ export async function POST(req: Request) {
     fullName,
     sex,
     age: Number(age),
-    labPatientCode: labPatientCode || null,
     createdAt: now,
     updatedAt: now,
   };

@@ -48,9 +48,18 @@ export async function POST(req: Request) {
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();
-  const { patientId, type, caseType, ward, status } = body;
+  const { patientId, type, caseType, customCaseTypeLabel, ward, status } = body;
   if (!patientId || !type || !caseType) {
     return Response.json({ error: "patientId, type and caseType are required" }, { status: 400 });
+  }
+  if (!["emergency", "ward", "clinic"].includes(type)) {
+    return Response.json({ error: "Invalid encounter type" }, { status: 400 });
+  }
+  if (!["hernia", "biliary", "hepatic", "custom"].includes(caseType)) {
+    return Response.json({ error: "Invalid case type" }, { status: 400 });
+  }
+  if (caseType === "custom" && !customCaseTypeLabel?.trim()) {
+    return Response.json({ error: "customCaseTypeLabel is required when caseType is custom" }, { status: 400 });
   }
 
   const db = await getDb();
@@ -62,6 +71,7 @@ export async function POST(req: Request) {
     patientId: toObjectId(patientId),
     type,
     caseType,
+    customCaseTypeLabel: caseType === "custom" ? customCaseTypeLabel.trim() : null,
     status: status || "active",
     ward: ward || null,
     openedAt: now,
@@ -75,7 +85,7 @@ export async function POST(req: Request) {
     collection: "encounters",
     documentId: res.insertedId,
     action: "create",
-    summary: `Opened ${type} encounter (${caseType}) for ${patient.fullName}`,
+    summary: `Opened ${type} encounter (${caseType === "custom" ? customCaseTypeLabel.trim() : caseType}) for ${patient.fullName}`,
     performedBy: userId,
   });
 
