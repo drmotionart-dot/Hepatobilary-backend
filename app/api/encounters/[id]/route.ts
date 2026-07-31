@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import { toObjectId } from "@/lib/api";
+import type { WithId } from "mongodb";
 import type { Encounter, Patient, ClinicalNote, LabPanel, ImagingRequest, ReferralConsult, TreatmentLog, OperationForm, DischargeForm } from "@/lib/models/types";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
@@ -30,8 +31,22 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     .sort({ referredAt: -1 })
     .toArray();
   const treatmentLog = await db.collection<TreatmentLog>("treatmentLogs").findOne({ encounterId: encounter._id });
-  const operation = await db.collection<OperationForm>("operationForms").findOne({ encounterId: encounter._id });
+  let operation = await db.collection<OperationForm>("operationForms").findOne({ encounterId: encounter._id });
   const discharge = await db.collection<DischargeForm>("dischargeForms").findOne({ encounterId: encounter._id });
+
+  if (operation) {
+    const opUserIds = [...new Set([operation.surgeon, ...(operation.assistants || [])].map((id) => id.toString()))];
+    const opUsers = opUserIds.length
+      ? await db.collection("users").find({ _id: { $in: opUserIds.map(toObjectId) } }).toArray()
+      : [];
+    const opUserMap = new Map(opUsers.map((u: any) => [u._id.toString(), u.fullName]));
+    const enriched: WithId<OperationForm> & { surgeonName: string; assistantNames: string[] } = {
+      ...operation,
+      surgeonName: opUserMap.get(operation.surgeon.toString()) || "Unknown",
+      assistantNames: (operation.assistants || []).map((id) => opUserMap.get(id.toString()) || "Unknown"),
+    };
+    operation = enriched;
+  }
 
   const noteAuthors = await db
     .collection("users")

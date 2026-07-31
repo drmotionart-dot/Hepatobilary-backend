@@ -16,6 +16,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const update: Record<string, unknown> = { ...body };
   if (body.assistants) update.assistants = body.assistants.map(toObjectId);
+  if (body.date) update.date = new Date(body.date);
 
   await db.collection<OperationForm>("operationForms").updateOne({ _id: existing._id }, { $set: update });
 
