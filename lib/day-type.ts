@@ -1,5 +1,5 @@
 import { getDb } from "@/lib/mongodb";
-import type { DayType, DayTypeCalendar } from "@/lib/models/types";
+import type { DayType, DayTypeCalendar, RoleSlotDefinition } from "@/lib/models/types";
 
 // Day-type resolution (spec 3.13). The DayTypeCalendar is the source of truth
 // once set; unset dates fall back to weekday rules:
@@ -59,4 +59,28 @@ export async function resolveDayTypes(dates: Date[]): Promise<ResolvedDayType[]>
 export async function resolveDayType(date: Date): Promise<ResolvedDayType> {
   const [resolved] = await resolveDayTypes([date]);
   return resolved!;
+}
+
+// Whether a role-slot definition applies on a given resolved calendar day.
+// Every resolver that maps slots onto dates — dashboard "on shift" counts, the
+// calendar card's per-day assigned counts, and the roster board — must use this
+// so they always agree (spec 6). A slot applies when its base dayType matches
+// the resolved day type, or when the day carries the surgery overlay and the
+// slot is a surgery-partial (the Sun/Wed surgery-list addition); a
+// weekday-restricted slot (e.g. ward-prep on Fridays) only applies on its
+// listed weekdays.
+export function slotAppliesOnDay(
+  slot: RoleSlotDefinition,
+  resolved: { dayType: DayType; surgeryOverlay: boolean },
+  date: Date
+): boolean {
+  const weekdayOk =
+    !Array.isArray(slot.weekdays) || slot.weekdays.length === 0 || slot.weekdays.includes(date.getDay());
+  // Base dayType match requires the weekday check too (mirrors the roster
+  // board's daySlots filter).
+  if (slot.dayType === resolved.dayType) return weekdayOk;
+  // Surgery overlay: the board adds surgery-partial normal-day slots with NO
+  // weekday restriction — keep identical so counts always agree.
+  if (resolved.surgeryOverlay && slot.dayType === "normal" && slot.shiftType === "surgery-partial") return true;
+  return false;
 }
