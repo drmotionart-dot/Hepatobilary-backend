@@ -106,8 +106,17 @@ export async function POST(req: Request) {
     endTime: body.endTime || null,
   };
 
+  // Drop any absence marks for people who are no longer in the slot — being
+  // removed from the duty group and being marked absent are different things,
+  // and a stale mark on a non-assigned user would be confusing (spec 6.2).
+  const removedIds = current.filter((id) => !nextUserIds.includes(id));
+
   if (existing) {
-    await db.collection<ShiftAssignment>("shiftAssignments").updateOne({ _id: existing._id }, { $set: fields });
+    const update: Record<string, unknown> = { $set: fields };
+    if (removedIds.length > 0) {
+      update.$pull = { absent: { userId: { $in: removedIds.map(toObjectId) } } };
+    }
+    await db.collection<ShiftAssignment>("shiftAssignments").updateOne({ _id: existing._id }, update);
     await logAudit({
       collection: "shiftAssignments",
       documentId: existing._id,

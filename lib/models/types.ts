@@ -41,6 +41,7 @@ export interface User {
   expiresAt?: Date | null; // set for bulk-generated accounts: createdAt + 50 days
   rotationImportId?: ObjectId | null;
   grantedCapabilities?: Capability[]; // extra resident-level powers granted to an intern (spec 11.7)
+  tourCompletedAt?: Date | null; // set once the onboarding tour is completed or dismissed (spec 14)
   createdAt: Date;
   updatedAt: Date;
 }
@@ -324,6 +325,10 @@ export interface ShiftAssignment {
   userIds: ObjectId[]; // a slot can hold a duty group, not just one person (spec 6.1)
   startTime?: string;
   endTime?: string;
+  // Per-person absence marks (spec 6.2): a resident/admin marks an assigned
+  // intern absent with a required reason. The user stays in userIds — the
+  // record shows "assigned but absent". Cleared by un-marking, never by removal.
+  absent?: { userId: ObjectId; absentReason: string; absentMarkedBy: ObjectId; absentMarkedAt: Date }[];
 }
 
 export type EmergencyPoolShiftType = "long" | "night";
