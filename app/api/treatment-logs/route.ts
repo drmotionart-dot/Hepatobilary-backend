@@ -22,8 +22,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  // Logging treatments is intern/resident only (spec §7).
-  const session = await requireRole(["intern", "resident"]);
+  // Logging treatments is intern/resident/admin (spec §7, amended).
+  const session = await requireRole(["intern", "resident", "admin"]);
   if (!session) return Response.json({ error: "Intern or resident only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 

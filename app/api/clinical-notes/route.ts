@@ -26,8 +26,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  // Writing clinical notes is intern/resident only — admin reads but doesn't write (spec §7).
-  const session = await requireRole(["intern", "resident"]);
+  // Writing clinical notes is intern/resident/admin (spec §7, amended).
+  const session = await requireRole(["intern", "resident", "admin"]);
   if (!session) return Response.json({ error: "Intern or resident only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
