@@ -1,4 +1,4 @@
-import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
+import { requireRole, requireCapability, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import type { DischargeForm } from "@/lib/models/types";
@@ -21,8 +21,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await requireRole(["resident"]);
-  if (!session) return Response.json({ error: "Resident only" }, { status: 403 });
+  const session = await requireCapability("finalize-discharge");
+  if (!session) return Response.json({ error: "Requires the finalize-discharge capability" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();

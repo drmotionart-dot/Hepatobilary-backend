@@ -1,4 +1,4 @@
-import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
+import { requireRole, requireCapability, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import { resolveDayTypes } from "@/lib/day-type";
@@ -56,8 +56,8 @@ export async function GET(req: Request) {
 //   { date, roleSlotDefinitionId, userId: string }     -> toggle one user in/out
 //   { from, to }                                       -> bulk generate
 export async function POST(req: Request) {
-  const session = await requireRole(["resident", "admin"]);
-  if (!session) return Response.json({ error: "Resident or admin only" }, { status: 403 });
+  const session = await requireCapability("manage-roster");
+  if (!session) return Response.json({ error: "Requires the manage-roster capability" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();

@@ -1,4 +1,4 @@
-import { requireRole } from "@/lib/api";
+import { requireRole, requireCapability } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import { toObjectId } from "@/lib/api";
@@ -32,8 +32,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await requireRole(["resident", "admin"]);
-  if (!session) return Response.json({ error: "Resident or admin only" }, { status: 403 });
+  const session = await requireCapability("set-day-type-calendar");
+  if (!session) return Response.json({ error: "Requires the set-day-type-calendar capability" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();

@@ -5,8 +5,8 @@ import { requireShiftKeyForIntern } from "@/lib/shift-key";
 import type { ImagingRequest } from "@/lib/models/types";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await requireRole(["intern", "resident"]);
-  if (!session) return Response.json({ error: "Intern or resident only" }, { status: 403 });
+  const session = await requireRole(["intern", "resident", "admin"]);
+  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const userId = toObjectId((session.user as any).id);
 
   const gate = await requireShiftKeyForIntern(req, session);

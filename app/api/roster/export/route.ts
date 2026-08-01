@@ -1,4 +1,4 @@
-import { requireRole } from "@/lib/api";
+import { requireCapability } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { resolveDayTypes } from "@/lib/day-type";
 import type { RoleSlotDefinition, ShiftAssignment, EmergencyDayPool, User } from "@/lib/models/types";
@@ -8,8 +8,8 @@ import { dateKey } from "@/lib/roster-import";
 // Wardyati-style .xlsx (one row per day, one column per shift slot) from the
 // current assignments/pools, for a printable/offline copy (spec 6.1 step 4).
 export async function GET(req: Request) {
-  const session = await requireRole(["resident", "admin"]);
-  if (!session) return Response.json({ error: "Resident or admin only" }, { status: 403 });
+  const session = await requireCapability("manage-roster");
+  if (!session) return Response.json({ error: "Requires the manage-roster capability" }, { status: 403 });
 
   const url = new URL(req.url);
   const fromParam = url.searchParams.get("from");

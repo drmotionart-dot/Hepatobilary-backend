@@ -1,4 +1,4 @@
-import { requireRole } from "@/lib/api";
+import { requireRole, requireCapability } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import { toObjectId } from "@/lib/api";
@@ -19,8 +19,8 @@ import {
 // people by phone (primary) or name (fallback), then fills the matching
 // ShiftAssignment slots / EmergencyDayPools for each date (spec 6.1).
 export async function POST(req: Request) {
-  const session = await requireRole(["resident", "admin"]);
-  if (!session) return Response.json({ error: "Resident or admin only" }, { status: 403 });
+  const session = await requireCapability("manage-roster");
+  if (!session) return Response.json({ error: "Requires the manage-roster capability" }, { status: 403 });
   const importerId = toObjectId((session.user as any).id);
 
   const formData = await req.formData();

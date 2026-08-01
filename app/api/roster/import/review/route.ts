@@ -1,4 +1,4 @@
-import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
+import { requireCapability, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import type { Db, ObjectId } from "mongodb";
@@ -14,8 +14,8 @@ import { createBulkAccount } from "@/lib/account-factory";
 // bulk-account generation as the rotation Excel import (spec 10.2), so a
 // person only ever needs one account no matter which import meets them first.
 export async function GET() {
-  const session = await requireRole(["resident", "admin"]);
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireCapability("manage-roster");
+  if (!session) return Response.json({ error: "Requires the manage-roster capability" }, { status: 403 });
 
   const db = await getDb();
   const imports = await db
@@ -53,8 +53,8 @@ export async function GET() {
 //   { importId, action: "create-account", rowIndex } — create ONE account + bind
 //   { importId, action: "create-all" }    — create/bind every unmatched row with a phone
 export async function POST(req: Request) {
-  const session = await requireRole(["resident", "admin"]);
-  if (!session) return Response.json({ error: "Resident or admin only" }, { status: 403 });
+  const session = await requireCapability("manage-roster");
+  if (!session) return Response.json({ error: "Requires the manage-roster capability" }, { status: 403 });
   const actorId = toObjectId((session.user as any).id);
 
   const body = await req.json();

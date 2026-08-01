@@ -1,11 +1,11 @@
-import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
+import { requireRole, requireCapability, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import type { OperationForm } from "@/lib/models/types";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await requireRole(["resident"]);
-  if (!session) return Response.json({ error: "Resident only" }, { status: 403 });
+  const session = await requireCapability("complete-operation-form");
+  if (!session) return Response.json({ error: "Requires the complete-operation-form capability" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();

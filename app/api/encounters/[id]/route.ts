@@ -1,4 +1,4 @@
-import { requireSession, requireRole, toObjectId, isValidObjectId } from "@/lib/api";
+import { requireSession, requireRole, requireCapability, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import type { WithId } from "mongodb";
@@ -68,12 +68,36 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  // Status transitions / admit-to-ward / type escalation — resident only (spec §7).
-  const session = await requireRole(["resident"]);
-  if (!session) return Response.json({ error: "Resident only" }, { status: 403 });
+  const body = await req.json();
+
+  // Per-action permission model (spec §7 + 11.7):
+  //  - admit-to-ward / escalate-to-ER / refer-out / follow-up linkage / re-open
+  //    (active): general workflow steps — resident or admin only.
+  //  - discharged / follow-up-pending: finalize-discharge capability.
+  //  - closed: close-follow-up capability.
+  // Admins and residents always pass requireCapability; interns need the grant.
+  const status = body.status as string | undefined;
+  if (body.action === "admit" || status === "referred-out" || status === "active" || body.type === "emergency" || "linkedFollowUpOf" in body) {
+    const session = await requireRole(["resident", "admin"]);
+    if (!session) return Response.json({ error: "Resident or admin only" }, { status: 403 });
+    return handlePatch(req, params, session, body);
+  } else if (status === "closed") {
+    const session = await requireCapability("close-follow-up");
+    if (!session) return Response.json({ error: "Requires the close-follow-up capability" }, { status: 403 });
+    return handlePatch(req, params, session, body);
+  } else if (status === "discharged" || status === "follow-up-pending") {
+    const session = await requireCapability("finalize-discharge");
+    if (!session) return Response.json({ error: "Requires the finalize-discharge capability" }, { status: 403 });
+    return handlePatch(req, params, session, body);
+  }
+  const session = await requireRole(["resident", "admin"]);
+  if (!session) return Response.json({ error: "Resident or admin only" }, { status: 403 });
+  return handlePatch(req, params, session, body);
+}
+
+async function handlePatch(_req: Request, params: { id: string }, session: NonNullable<Awaited<ReturnType<typeof requireRole>>>, body: any) {
   const userId = toObjectId((session.user as any).id);
 
-  const body = await req.json();
   const db = await getDb();
   if (!isValidObjectId(params.id)) return Response.json({ error: "Invalid encounter id" }, { status: 400 });
   const encounter = await db.collection<Encounter>("encounters").findOne({ _id: toObjectId(params.id) });

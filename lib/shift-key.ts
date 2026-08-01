@@ -70,15 +70,32 @@ export interface ShiftKeyGate {
 
 // Enforces the intern shift-key gate (spec 11.6) for a gated route.
 //  - Residents/admins are never gated.
+//  - Interns holding the bypass-shift-key capability (spec 11.7) are never
+//    gated either — the grant replaces the key.
 //  - Online submissions must match the CURRENT active key → 403 on mismatch,
 //    nothing is created.
 //  - Offline sync replays (x-sync-replay + x-performed-at) are re-validated
 //    against the key active at that timestamp — accepted either way, with
 //    `shiftKeyMatched` set so the caller can flag mismatches for review.
 // Callers must pass `shiftKey`/`shiftKeyMatched` through to logAudit.
-export async function requireShiftKeyForIntern(req: Request, session: { user: { role: string } }): Promise<ShiftKeyGate> {
+export async function requireShiftKeyForIntern(req: Request, session: { user: { role: string; id?: string } }): Promise<ShiftKeyGate> {
   if (session.user.role !== "intern") {
     return { allowed: true, shiftKeyMatched: true };
+  }
+
+  if (session.user.id) {
+    try {
+      const db = await getDb();
+      const user = await db
+        .collection("users")
+        .findOne({ _id: toObjectId(session.user.id) }, { projection: { grantedCapabilities: 1 } });
+      const caps: unknown[] = user?.grantedCapabilities ?? [];
+      if (Array.isArray(caps) && caps.includes("bypass-shift-key")) {
+        return { allowed: true, shiftKey: null, shiftKeyMatched: true };
+      }
+    } catch {
+      // fall through to the key check
+    }
   }
 
   const key = req.headers.get("x-shift-key")?.trim() ?? "";

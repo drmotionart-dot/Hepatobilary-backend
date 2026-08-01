@@ -11,7 +11,15 @@ export type AccountStatus = "pending-approval" | "active" | "expired" | "removed
 // Granular capability grants (spec 11.7) — a resident-level utility becomes
 // usable by an intern holding the specific grant. Extensible: add new keys here
 // and gate routes with requireCapability.
-export const CAPABILITIES = ["generate-shift-key"] as const;
+export const CAPABILITIES = [
+  "generate-shift-key",
+  "finalize-discharge",
+  "close-follow-up",
+  "complete-operation-form",
+  "manage-roster",
+  "set-day-type-calendar",
+  "bypass-shift-key",
+] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 export function isCapability(value: unknown): value is Capability {
   return typeof value === "string" && (CAPABILITIES as readonly string[]).includes(value);
