@@ -12,7 +12,9 @@ export interface User {
   _id?: ObjectId;
   fullName: string;
   role: Role;
-  email: string;
+  loginId: string; // the actual login credential — email for self-registered, generated for bulk accounts (spec 3.1)
+  email?: string | null; // optional — Wardyati roster data has no email, bulk-generated accounts log in via loginId alone
+  phone?: string; // canonical identity key — unique (sparse index), stored normalized (digits, 20/0020 stripped), used to match rotation + roster imports (spec 6.1/10.2)
   passwordHash: string;
   accountType: AccountType;
   status: AccountStatus;
@@ -27,11 +29,12 @@ export interface User {
 
 export interface RotationImportRow {
   name: string;
-  email: string;
-  number: string;
-  generatedUserId?: string;
+  email?: string;
+  number?: string;
+  generatedUserId?: string; // created user's _id — linkage + phone backfill (spec 10.2)
+  generatedLoginId?: string; // the login credential handed to the person (separate from email)
   generatedPassword?: string;
-  status: "created" | "error";
+  status: "created" | "existing" | "error";
   errorReason?: string;
 }
 
@@ -146,6 +149,10 @@ export interface LabPanel {
   _id?: ObjectId;
   encounterId: ObjectId;
   results: LabResultEntry[];
+  // Test keys pre-seeded from the case-type template's labPanelPreset when
+  // the encounter was opened — shown as "awaiting results" until a value is
+  // added, then removed (spec 3.6: "auto-seeded ... the moment a caseType is chosen").
+  presetTests?: string[];
 }
 
 export interface LabTestNameMapping {
@@ -279,7 +286,7 @@ export interface DayTypeCalendar {
 }
 
 export type ShiftType = "long" | "night" | "24hr" | "surgery-partial";
-export type ShiftCategory = "ward" | "clinic" | "emergency-route" | "typing" | "none";
+export type ShiftCategory = "ward" | "clinic" | "emergency-route" | "typing" | "ward-prep" | "none";
 
 export interface RoleSlotDefinition {
   _id?: ObjectId;
@@ -288,15 +295,49 @@ export interface RoleSlotDefinition {
   shiftType: ShiftType;
   category: ShiftCategory;
   label: string;
+  weekdays?: number[]; // 0=Sunday … 6=Saturday; absent = every day of the dayType
 }
 
 export interface ShiftAssignment {
   _id?: ObjectId;
   date: Date;
   roleSlotDefinitionId: ObjectId;
-  userId: ObjectId | null;
+  userIds: ObjectId[]; // a slot can hold a duty group, not just one person (spec 6.1)
   startTime?: string;
   endTime?: string;
+}
+
+export type EmergencyPoolShiftType = "long" | "night";
+
+// For dates marked as an Emergency day, the rotation-wide import stores the
+// Long/Night emergency duty group here. The fine Route/Ward/Typing split is a
+// separate, day-before step that reads from this pool (spec 6.1).
+export interface EmergencyDayPool {
+  _id?: ObjectId;
+  date: Date;
+  shiftType: EmergencyPoolShiftType;
+  userIds: ObjectId[];
+  createdBy: ObjectId;
+  createdAt: Date;
+}
+
+export interface RosterImportRow {
+  date?: string;
+  target: string; // human-readable slot/pool label the entry was routed to
+  name: string;
+  phone?: string;
+  matchedUserId?: string | null;
+  generatedLoginId?: string; // set when the review "create account" action created this person (spec 6.1 step 4)
+  generatedPassword?: string;
+  status: "created" | "matched-existing" | "unmatched" | "ignored";
+}
+
+export interface RosterImport {
+  _id?: ObjectId;
+  uploadedBy: ObjectId;
+  uploadedAt: Date;
+  sourceFileName: string;
+  rows: RosterImportRow[];
 }
 
 export interface AuditLog {

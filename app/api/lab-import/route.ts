@@ -50,8 +50,10 @@ export async function POST(req: Request) {
   for (const file of files) {
     try {
       const buffer = Buffer.from(await file.arrayBuffer());
+      // pdf.js's fake-worker serialization mishandles Node Buffers (xref
+      // corruption), so hand it a plain Uint8Array copy instead.
       const parsePdf = (await import("pdf-parse")).default;
-      const result = await parsePdf(buffer);
+      const result = await parsePdf(new Uint8Array(buffer) as unknown as Buffer);
       const text = result?.text || "";
       const lines = text
         .split("\n")

@@ -2,7 +2,14 @@ import { requireRole } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import { toObjectId } from "@/lib/api";
-import type { OperationForm } from "@/lib/models/types";
+import type { Db } from "mongodb";
+import type { OperationForm, User } from "@/lib/models/types";
+
+async function withSurgeonName(db: Db, form: OperationForm) {
+  if (!form.surgeon) return { ...form, surgeonName: "" };
+  const surgeon = await db.collection<User>("users").findOne({ _id: form.surgeon }, { projection: { fullName: 1 } });
+  return { ...form, surgeonName: surgeon?.fullName || "" };
+}
 
 export async function GET(req: Request) {
   const session = await requireRole(["intern", "resident", "admin"]);
@@ -14,15 +21,21 @@ export async function GET(req: Request) {
 
   if (encounterId) {
     const form = await db.collection<OperationForm>("operationForms").findOne({ encounterId: toObjectId(encounterId) });
-    return Response.json(form || null);
+    return Response.json(form ? await withSurgeonName(db, form) : null);
   }
+
   const forms = await db.collection<OperationForm>("operationForms").find().sort({ date: -1 }).toArray();
-  return Response.json(forms);
+  const surgeonIds = [...new Set(forms.map((f) => f.surgeon?.toString()).filter(Boolean))].map(toObjectId);
+  const surgeons = surgeonIds.length
+    ? await db.collection<User>("users").find({ _id: { $in: surgeonIds } }, { projection: { fullName: 1 } }).toArray()
+    : [];
+  const nameMap = new Map(surgeons.map((s) => [s._id!.toString(), s.fullName]));
+  return Response.json(forms.map((f) => ({ ...f, surgeonName: f.surgeon ? nameMap.get(f.surgeon.toString()) || "" : "" })));
 }
 
 export async function POST(req: Request) {
-  const session = await requireRole(["resident", "admin"]);
-  if (!session) return Response.json({ error: "Resident or admin only" }, { status: 403 });
+  const session = await requireRole(["resident"]);
+  if (!session) return Response.json({ error: "Resident only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();

@@ -1,12 +1,13 @@
-import { requireSession } from "@/lib/api";
+import { requireRole } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import { toObjectId } from "@/lib/api";
 import type { ReferralConsult } from "@/lib/models/types";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await requireSession();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  // Reviewing/approving a referral consult is resident/admin only (spec §7).
+  const session = await requireRole(["resident", "admin"]);
+  if (!session) return Response.json({ error: "Resident or admin only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();

@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     collection: "users",
     documentId: user._id,
     action: "update",
-    summary: `Password changed for ${user.email}`,
+    summary: `Password changed for ${user.loginId}`,
     performedBy: userId,
   });
 
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     sub: user._id!.toString(),
     role: user.role,
     name: user.fullName,
-    email: user.email,
+    email: user.email ?? undefined,
     mustChangePassword: false,
   });
 

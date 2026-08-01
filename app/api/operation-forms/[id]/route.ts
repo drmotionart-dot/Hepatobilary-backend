@@ -5,8 +5,8 @@ import { toObjectId } from "@/lib/api";
 import type { OperationForm } from "@/lib/models/types";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await requireRole(["resident", "admin"]);
-  if (!session) return Response.json({ error: "Resident or admin only" }, { status: 403 });
+  const session = await requireRole(["resident"]);
+  if (!session) return Response.json({ error: "Resident only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();

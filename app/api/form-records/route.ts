@@ -14,7 +14,18 @@ export async function GET(req: Request) {
 
   const filter = encounterId ? { encounterId: toObjectId(encounterId) } : {};
   const records = await db.collection<FormRecord>("formRecords").find(filter).sort({ createdAt: -1 }).toArray();
-  return Response.json(records);
+
+  const userIds = [...new Set(records.map((r) => r.createdBy.toString()))];
+  const users = await db
+    .collection("users")
+    .find({ _id: { $in: userIds.map(toObjectId) } })
+    .project({ fullName: 1 })
+    .toArray();
+  const userMap = new Map(users.map((u: any) => [u._id.toString(), u.fullName]));
+
+  return Response.json(
+    records.map((r) => ({ ...r, authorName: userMap.get(r.createdBy.toString()) || "Unknown" }))
+  );
 }
 
 export async function POST(req: Request) {

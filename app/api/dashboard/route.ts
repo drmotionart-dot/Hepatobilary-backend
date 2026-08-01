@@ -24,26 +24,28 @@ export async function GET() {
     .find({ date: { $gte: startOfDay, $lt: endOfDay } })
     .toArray();
 
-  const userIds = [...new Set(assignments.filter((a) => a.userId).map((a) => a.userId.toString()))];
+  const userIds = [...new Set(assignments.flatMap((a: any) => (a.userIds || []).map((u: any) => u.toString())))];
   const users = userIds.length
     ? await db.collection("users").find({ _id: { $in: userIds.map((id) => new ObjectId(id)) } }).toArray()
     : [];
   const userMap = new Map(users.map((u: any) => [u._id.toString(), u.fullName]));
 
-  const slotIds = assignments.map((a) => a.roleSlotDefinitionId.toString());
+  const slotIds = assignments.map((a: any) => a.roleSlotDefinitionId.toString());
   const slots = slotIds.length
     ? await db.collection("roleSlotDefinitions").find({ _id: { $in: slotIds.map((id) => new ObjectId(id)) } }).toArray()
     : [];
   const slotMap = new Map(slots.map((s: any) => [s._id.toString(), s.label]));
 
   const people = assignments
-    .filter((a) => a.userId)
-    .map((a) => ({
-      name: userMap.get(a.userId.toString()) || "Unknown",
-      category: slotMap.get(a.roleSlotDefinitionId.toString()) || "",
-    }));
+    .flatMap((a: any) =>
+      (a.userIds || []).map((u: any) => ({
+        name: userMap.get(u.toString()) || "Unknown",
+        category: slotMap.get(a.roleSlotDefinitionId.toString()) || "",
+      }))
+    )
+    .filter((p: any) => p.name !== "Unknown");
 
-  const activeShift = assignments.some((a) => a.userId) ? "assigned" : "unassigned";
+  const activeShift = assignments.some((a: any) => a.userIds && a.userIds.length > 0) ? "assigned" : "unassigned";
 
   const [activeWard, followUpPending, needsReviewImports] = await Promise.all([
     db.collection<Encounter>("encounters").countDocuments({ status: "active", type: "ward" }),

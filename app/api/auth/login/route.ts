@@ -14,16 +14,19 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body) return Response.json({ error: "Invalid request body" }, { status: 400 });
 
-  const email = String(body.email || "").trim().toLowerCase();
+  // The login credential is the user's loginId (spec 3.1): an email for
+  // self-registered accounts, a generated ID (e.g. hpb01123456789) for
+  // bulk-generated ones. Both are stored lowercase, so match case-insensitively.
+  const loginId = String(body.loginId || body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
-  if (!email || !password) {
-    return Response.json({ error: "email and password are required" }, { status: 400 });
+  if (!loginId || !password) {
+    return Response.json({ error: "Login ID and password are required" }, { status: 400 });
   }
 
   const db = await getDb();
-  const user = await db.collection<User>("users").findOne({ email });
+  const user = await db.collection<User>("users").findOne({ loginId });
   if (!user || !user.passwordHash) {
-    return Response.json({ error: "Invalid email or password" }, { status: 401 });
+    return Response.json({ error: "Invalid login ID or password" }, { status: 401 });
   }
 
   if (user.status === "pending-approval") {
@@ -40,14 +43,14 @@ export async function POST(req: Request) {
   }
 
   const valid = await bcrypt.compare(password, user.passwordHash);
-  if (!valid) return Response.json({ error: "Invalid email or password" }, { status: 401 });
+  if (!valid) return Response.json({ error: "Invalid login ID or password" }, { status: 401 });
 
   const id = user._id!.toString();
   const token = await signToken({
     sub: id,
     role: user.role,
     name: user.fullName,
-    email: user.email,
+    email: user.email ?? undefined,
     mustChangePassword: user.mustChangePassword,
   });
 

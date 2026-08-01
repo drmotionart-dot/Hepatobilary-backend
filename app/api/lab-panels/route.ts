@@ -1,4 +1,4 @@
-import { requireSession } from "@/lib/api";
+import { requireSession, requireRole } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import { toObjectId } from "@/lib/api";
@@ -22,8 +22,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await requireSession();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  // Adding lab results is intern/resident only (spec §7).
+  const session = await requireRole(["intern", "resident"]);
+  if (!session) return Response.json({ error: "Intern or resident only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
     }
     await db.collection<LabPanel>("labPanels").updateOne(
       { _id: existing._id },
-      { $push: { results: entry } }
+      { $push: { results: entry }, $pull: { presetTests: test } }
     );
     await logAudit({
       collection: "labPanels",

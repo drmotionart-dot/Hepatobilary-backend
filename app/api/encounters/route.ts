@@ -2,7 +2,7 @@ import { requireSession } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import { toObjectId } from "@/lib/api";
-import type { Encounter, Patient } from "@/lib/models/types";
+import type { Encounter, Patient, LabPanel } from "@/lib/models/types";
 
 export async function GET(req: Request) {
   const session = await requireSession();
@@ -88,6 +88,26 @@ export async function POST(req: Request) {
     summary: `Opened ${type} encounter (${caseType === "custom" ? customCaseTypeLabel.trim() : caseType}) for ${patient.fullName}`,
     performedBy: userId,
   });
+
+  // Spec 3.6 / 4.3: pre-seed the LabPanel with the case type's labPanelPreset
+  // (empty, awaiting values) the moment the encounter is opened. Custom cases
+  // have no template preset, so they start with an empty panel.
+  if (caseType !== "custom") {
+    try {
+      const template = await db
+        .collection<{ name: string; labPanelPreset: string[] }>("caseTypeTemplates")
+        .findOne({ name: { $regex: new RegExp(`^${caseType}$`, "i") }, active: true });
+      if (template?.labPanelPreset?.length) {
+        await db.collection<LabPanel>("labPanels").insertOne({
+          encounterId: res.insertedId,
+          results: [],
+          presetTests: template.labPanelPreset,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to pre-seed lab panel:", err);
+    }
+  }
 
   return Response.json({ ...doc, _id: res.insertedId }, { status: 201 });
 }

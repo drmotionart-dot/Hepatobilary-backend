@@ -110,7 +110,9 @@ const roleSlotDefinitions: RoleSlotDefinition[] = [
   { dayType: "clinic", personType: "resident", shiftType: "24hr", category: "clinic", label: "Clinic resident" },
   // Residents — Emergency day
   { dayType: "emergency", personType: "resident", shiftType: "24hr", category: "ward", label: "Ward resident" },
-  { dayType: "emergency", personType: "resident", shiftType: "24hr", category: "emergency-route", label: "Emergency-route resident" }
+  { dayType: "emergency", personType: "resident", shiftType: "24hr", category: "emergency-route", label: "Emergency-route resident" },
+  // Friday ward prep (تحضير عنبر) — column B of the Wardyati export, Fridays only (spec 6.1)
+  { dayType: "normal", personType: "intern", shiftType: "long", category: "ward-prep", label: "Ward prep (تحضير عنبر)", weekdays: [5] }
 ];
 
 // Section 3.13a: lab PDF → internal test name mapping lives in
@@ -129,6 +131,7 @@ async function seed() {
     await db.collection("users").insertOne({
       fullName: "Department Admin",
       role: "admin",
+      loginId: adminEmail.toLowerCase(),
       email: adminEmail,
       passwordHash: await bcrypt.hash("admin123", 10),
       accountType: "self-registered",

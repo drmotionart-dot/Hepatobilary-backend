@@ -41,7 +41,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     collection: "users",
     documentId: user._id,
     action: "update",
-    summary: `Admin action on ${user.email}: ${JSON.stringify(Object.keys(update))}`,
+    summary: `Admin action on ${user.loginId}: ${JSON.stringify(Object.keys(update))}`,
     performedBy: adminId,
   });
 

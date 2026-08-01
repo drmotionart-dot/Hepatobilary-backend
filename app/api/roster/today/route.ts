@@ -24,7 +24,7 @@ export async function GET() {
     .find({ date: { $gte: startOfDay, $lt: endOfDay } })
     .toArray();
 
-  const userIds = [...new Set(assignments.filter((a) => a.userId).map((a) => a.userId!.toString()))];
+  const userIds = [...new Set(assignments.flatMap((a) => (a.userIds || []).map((u) => u.toString())))];
   const users = userIds.length
     ? await db.collection<User>("users").find({ _id: { $in: userIds.map((id) => new ObjectId(id)) } }).toArray()
     : [];
@@ -39,7 +39,7 @@ export async function GET() {
   const grouped = assignments.map((a) => ({
     assignment: a,
     slot: slotMap.get(a.roleSlotDefinitionId.toString()) || null,
-    user: a.userId ? userMap.get(a.userId.toString()) || null : null,
+    users: (a.userIds || []).map((u) => userMap.get(u.toString()) || null).filter(Boolean),
   }));
 
   return Response.json({ dayType, surgeryOverlay: dayTypeDoc?.surgeryOverlay || false, assignments: grouped });

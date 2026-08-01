@@ -1,4 +1,4 @@
-import { requireSession } from "@/lib/api";
+import { requireSession, requireRole } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import { toObjectId } from "@/lib/api";
@@ -68,8 +68,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await requireSession();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  // Finalizing discharge / closing follow-ups — resident only (spec §7).
+  const session = await requireRole(["resident"]);
+  if (!session) return Response.json({ error: "Resident only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();

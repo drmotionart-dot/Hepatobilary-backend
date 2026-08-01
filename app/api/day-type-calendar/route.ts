@@ -26,8 +26,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await requireRole(["admin"]);
-  if (!session) return Response.json({ error: "Admin only" }, { status: 403 });
+  const session = await requireRole(["resident", "admin"]);
+  if (!session) return Response.json({ error: "Resident or admin only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();

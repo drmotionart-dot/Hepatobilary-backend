@@ -27,7 +27,7 @@ export async function GET(req: Request) {
     .find({ date: { $gte: start, $lt: end } })
     .toArray();
 
-  const userIds = [...new Set(assignments.filter((a) => a.userId).map((a) => a.userId!.toString()))];
+  const userIds = [...new Set(assignments.flatMap((a) => (a.userIds || []).map((u) => u.toString())))];
   const users = userIds.length
     ? await db.collection("users").find({ _id: { $in: userIds.map(toObjectId) } }).toArray()
     : [];
@@ -43,14 +43,16 @@ export async function GET(req: Request) {
     assignments: assignments.map((a) => ({
       ...a,
       slot: slotMap.get(a.roleSlotDefinitionId.toString()) || null,
-      user: a.userId ? userMap.get(a.userId.toString()) || null : null,
+      users: (a.userIds || []).map((u) => userMap.get(u.toString()) || null).filter(Boolean),
     })),
   });
 }
 
-// Generate assignments for a date range based on the day-type calendar, and/or
-// assign a specific user to a slot. POST body: { from, to } for bulk generate,
-// or { date, roleSlotDefinitionId, userId } for a single fill.
+// Assign one or more users to a slot, generate a date range's slots from the
+// day-type calendar, or both. POST body shapes:
+//   { date, roleSlotDefinitionId, userIds: string[] }  -> replace the group
+//   { date, roleSlotDefinitionId, userId: string }     -> toggle one user in/out
+//   { from, to }                                       -> bulk generate
 export async function POST(req: Request) {
   const session = await requireRole(["resident", "admin"]);
   if (!session) return Response.json({ error: "Resident or admin only" }, { status: 403 });
@@ -63,7 +65,7 @@ export async function POST(req: Request) {
     return await bulkGenerate(body.from, body.to, userId);
   }
 
-  const { date, roleSlotDefinitionId, userId: assigneeId, startTime, endTime } = body;
+  const { date, roleSlotDefinitionId } = body;
   if (!date || !roleSlotDefinitionId) {
     return Response.json({ error: "date and roleSlotDefinitionId are required (or from/to for bulk)" }, { status: 400 });
   }
@@ -78,10 +80,24 @@ export async function POST(req: Request) {
     roleSlotDefinitionId: toObjectId(roleSlotDefinitionId),
   });
 
+  const current = (existing?.userIds || []).map((u) => u.toString());
+
+  // Replace with an explicit userIds array, or toggle a single userId.
+  let nextUserIds: string[];
+  if (Array.isArray(body.userIds)) {
+    nextUserIds = body.userIds.filter((x: unknown) => typeof x === "string" && x);
+  } else if (typeof body.userId === "string" && body.userId) {
+    nextUserIds = current.includes(body.userId)
+      ? current.filter((x) => x !== body.userId)
+      : [...current, body.userId];
+  } else {
+    nextUserIds = current;
+  }
+
   const fields: Record<string, unknown> = {
-    userId: assigneeId ? toObjectId(assigneeId) : null,
-    startTime: startTime || null,
-    endTime: endTime || null,
+    userIds: nextUserIds.map((id) => toObjectId(id)),
+    startTime: body.startTime || null,
+    endTime: body.endTime || null,
   };
 
   if (existing) {
@@ -90,7 +106,7 @@ export async function POST(req: Request) {
       collection: "shiftAssignments",
       documentId: existing._id,
       action: "update",
-      summary: `Filled shift slot ${roleSlotDefinitionId} on ${date}`,
+      summary: `Updated shift slot ${roleSlotDefinitionId} on ${date} (${nextUserIds.length} person(s))`,
       performedBy: userId,
     });
     const updated = await db.collection<ShiftAssignment>("shiftAssignments").findOne({ _id: existing._id });
@@ -100,9 +116,9 @@ export async function POST(req: Request) {
   const doc: ShiftAssignment = {
     date: start,
     roleSlotDefinitionId: toObjectId(roleSlotDefinitionId),
-    userId: assigneeId ? toObjectId(assigneeId) : null,
-    startTime: startTime || null,
-    endTime: endTime || null,
+    userIds: nextUserIds.map((id) => toObjectId(id)),
+    startTime: body.startTime || null,
+    endTime: body.endTime || null,
   };
   const res = await db.collection<ShiftAssignment>("shiftAssignments").insertOne(doc);
   await logAudit({
@@ -157,11 +173,13 @@ async function bulkGenerate(from: string, to: string, userId: any) {
     }
 
     for (const slot of daySlots) {
+      // weekdays restriction (e.g. ward-prep on Fridays only): skip other days.
+      if (Array.isArray(slot.weekdays) && slot.weekdays.length > 0 && !slot.weekdays.includes(d.getDay())) continue;
       const assignmentKey = `${key}:${slot._id!.toString()}`;
       if (existingKeys.has(assignmentKey)) continue;
       const dateOnly = new Date(d);
       dateOnly.setHours(0, 0, 0, 0);
-      toInsert.push({ date: dateOnly, roleSlotDefinitionId: slot._id!, userId: null, startTime: undefined, endTime: undefined });
+      toInsert.push({ date: dateOnly, roleSlotDefinitionId: slot._id!, userIds: [], startTime: undefined, endTime: undefined });
       created++;
     }
   }
