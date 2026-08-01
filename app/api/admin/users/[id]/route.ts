@@ -5,9 +5,9 @@ import { toObjectId } from "@/lib/api";
 import type { User } from "@/lib/models/types";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await requireRole(["admin"]);
-  if (!session) return Response.json({ error: "Admin only" }, { status: 403 });
-  const adminId = toObjectId((session.user as any).id);
+  const session = await requireRole(["admin", "resident"]);
+  if (!session) return Response.json({ error: "Admin or resident only" }, { status: 403 });
+  const actingId = toObjectId((session.user as any).id);
 
   const body = await req.json();
   const db = await getDb();
@@ -16,10 +16,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const update: Record<string, unknown> = { updatedAt: new Date() };
 
-  // Self-registered accounts: approve → active forever (spec 10.2)
+  // Approve / remove / reinstate / expire are open to residents and admins
+  // (spec §11 — account lifecycle is a shared duty). Field-level edits
+  // (role, status, mustChangePassword) stay admin-only below.
   if (body.action === "approve") {
     update.status = "active";
-    update.approvedBy = adminId;
+    update.approvedBy = actingId;
     update.approvedAt = new Date();
   } else if (body.action === "remove") {
     update.status = "removed";
@@ -29,6 +31,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     update.status = "active";
     update.approvedAt = new Date();
   } else {
+    if (session.user.role !== "admin") {
+      return Response.json({ error: "Admin only" }, { status: 403 });
+    }
     const allowed = ["role", "status", "mustChangePassword"];
     for (const key of allowed) {
       if (body[key] !== undefined) update[key] = body[key];
@@ -41,8 +46,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     collection: "users",
     documentId: user._id,
     action: "update",
-    summary: `Admin action on ${user.loginId}: ${JSON.stringify(Object.keys(update))}`,
-    performedBy: adminId,
+    summary: `Account action on ${user.loginId}: ${JSON.stringify(Object.keys(update))}`,
+    performedBy: actingId,
   });
 
   const updated = await db.collection<User>("users").findOne({ _id: user._id });

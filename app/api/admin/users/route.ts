@@ -6,11 +6,12 @@ import { createBulkAccount, generateLoginId } from "@/lib/account-factory";
 import { normalizePhone } from "@/lib/roster-import";
 import { ObjectId } from "mongodb";
 
-// Admin user management. GET lists all users; POST handles both
-// single-user creation and Excel rotation bulk import.
+// User management. GET lists all users for residents + admins (approvals and
+// account lifecycle are shared duties); POST creates accounts and stays
+// admin-only (single-user creation + Excel rotation bulk import).
 export async function GET() {
-  const session = await requireRole(["admin"]);
-  if (!session) return Response.json({ error: "Admin only" }, { status: 403 });
+  const session = await requireRole(["admin", "resident"]);
+  if (!session) return Response.json({ error: "Admin or resident only" }, { status: 403 });
 
   const db = await getDb();
   const users = await db
@@ -26,7 +27,6 @@ export async function POST(req: Request) {
   const session = await requireRole(["admin"]);
   if (!session) return Response.json({ error: "Admin only" }, { status: 403 });
   const adminId = toObjectId((session.user as any).id);
-
   const db = await getDb();
   const contentType = req.headers.get("content-type") || "";
 
