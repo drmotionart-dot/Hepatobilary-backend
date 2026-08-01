@@ -11,8 +11,10 @@ export async function GET() {
   const db = await getDb();
   const user = await db.collection<User>("users").findOne(
     { _id: toObjectId(session.user.id) },
-    { projection: { fullName: 1, role: 1, email: 1, phone: 1, status: 1, grantedCapabilities: 1, mustChangePassword: 1 } }
+    { projection: { fullName: 1, role: 1, email: 1, phone: 1, status: 1, grantedCapabilities: 1, mustChangePassword: 1, tourCompletedAt: 1 } }
   );
   if (!user) return Response.json({ error: "Not found" }, { status: 404 });
-  return Response.json({ user: { ...session.user, grantedCapabilities: user.grantedCapabilities ?? [] } });
+  return Response.json({
+    user: { ...session.user, grantedCapabilities: user.grantedCapabilities ?? [], tourCompletedAt: user.tourCompletedAt ?? null },
+  });
 }
