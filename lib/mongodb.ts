@@ -7,20 +7,31 @@ if (!uri) {
   throw new Error("Missing MONGODB_URI — copy .env.example to .env.local and fill it in.");
 }
 
-// Cache the client across hot-reloads in dev and across invocations in serverless
-// prod, so we don't open a new connection on every request.
-let cachedClient: MongoClient | null = null;
-let cachedDb: Db | null = null;
+// The client lives on globalThis so Next dev hot-reloads never orphan a cached
+// connection: re-evaluating this module re-reads the existing client instead of
+// constructing a new one whose sockets would linger (driver default pool is 100
+// and idle sockets never time out, which drives Atlas free-tier connection
+// churn). In serverless prod each warm container caches the same client across
+// invocations.
+const globalForMongo = globalThis as unknown as { _hpbMongoClient?: MongoClient };
+
+// Bound the pool: this app is low-traffic, one or two sockets are plenty, and a
+// hard cap keeps a single instance from ballooning toward the 100-connection
+// driver default. Idle sockets are returned after a minute.
+function createClient(): MongoClient {
+  return new MongoClient(uri as string, {
+    maxPoolSize: 10,
+    minPoolSize: 0,
+    maxIdleTimeMS: 60_000,
+  });
+}
 
 export async function getDb(): Promise<Db> {
-  if (cachedDb) return cachedDb;
+  const cached = globalForMongo._hpbMongoClient;
+  if (cached) return cached.db(dbName);
 
-  const client = cachedClient ?? new MongoClient(uri as string);
-  if (!cachedClient) {
-    await client.connect();
-    cachedClient = client;
-  }
-
-  cachedDb = client.db(dbName);
-  return cachedDb;
+  const client = createClient();
+  await client.connect();
+  globalForMongo._hpbMongoClient = client;
+  return client.db(dbName);
 }
