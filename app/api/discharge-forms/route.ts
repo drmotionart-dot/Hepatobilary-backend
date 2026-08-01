@@ -1,7 +1,6 @@
-import { requireRole } from "@/lib/api";
+import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
-import { toObjectId } from "@/lib/api";
 import type { DischargeForm } from "@/lib/models/types";
 
 export async function GET(req: Request) {
@@ -13,6 +12,7 @@ export async function GET(req: Request) {
   const db = await getDb();
 
   if (encounterId) {
+    if (!isValidObjectId(encounterId)) return Response.json({ error: "Invalid encounterId" }, { status: 400 });
     const form = await db.collection<DischargeForm>("dischargeForms").findOne({ encounterId: toObjectId(encounterId) });
     return Response.json(form || null);
   }
@@ -29,6 +29,9 @@ export async function POST(req: Request) {
   const { encounterId, summary } = body;
   if (!encounterId || !summary) {
     return Response.json({ error: "encounterId and summary are required" }, { status: 400 });
+  }
+  if (!isValidObjectId(encounterId)) {
+    return Response.json({ error: "Invalid encounterId" }, { status: 400 });
   }
 
   const db = await getDb();

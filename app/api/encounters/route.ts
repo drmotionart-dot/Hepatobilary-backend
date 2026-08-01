@@ -1,11 +1,10 @@
-import { requireSession } from "@/lib/api";
+import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
-import { toObjectId } from "@/lib/api";
 import type { Encounter, Patient, LabPanel } from "@/lib/models/types";
 
 export async function GET(req: Request) {
-  const session = await requireSession();
+  const session = await requireRole(["intern", "resident", "admin"]);
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const url = new URL(req.url);
@@ -19,7 +18,10 @@ export async function GET(req: Request) {
   if (type && ["emergency", "ward", "clinic"].includes(type)) filter.type = type;
   if (status) filter.status = status;
   if (ward && ["male", "female"].includes(ward)) filter.ward = ward;
-  if (patientId) filter.patientId = toObjectId(patientId);
+  if (patientId) {
+    if (!isValidObjectId(patientId)) return Response.json({ error: "Invalid patientId" }, { status: 400 });
+    filter.patientId = toObjectId(patientId);
+  }
 
   const encounters = await db
     .collection<Encounter>("encounters")
@@ -43,14 +45,18 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await requireSession();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  // Opening clinical encounters is intern/resident only (spec §7 — admin reads).
+  const session = await requireRole(["intern", "resident"]);
+  if (!session) return Response.json({ error: "Intern or resident only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();
   const { patientId, type, caseType, customCaseTypeLabel, ward, status } = body;
   if (!patientId || !type || !caseType) {
     return Response.json({ error: "patientId, type and caseType are required" }, { status: 400 });
+  }
+  if (!isValidObjectId(patientId)) {
+    return Response.json({ error: "Invalid patientId" }, { status: 400 });
   }
   if (!["emergency", "ward", "clinic"].includes(type)) {
     return Response.json({ error: "Invalid encounter type" }, { status: 400 });
@@ -98,10 +104,17 @@ export async function POST(req: Request) {
         .collection<{ name: string; labPanelPreset: string[] }>("caseTypeTemplates")
         .findOne({ name: { $regex: new RegExp(`^${caseType}$`, "i") }, active: true });
       if (template?.labPanelPreset?.length) {
-        await db.collection<LabPanel>("labPanels").insertOne({
+        const preseedRes = await db.collection<LabPanel>("labPanels").insertOne({
           encounterId: res.insertedId,
           results: [],
           presetTests: template.labPanelPreset,
+        });
+        void logAudit({
+          collection: "labPanels",
+          documentId: preseedRes.insertedId,
+          action: "create",
+          summary: `Pre-seeded lab panel (${template.labPanelPreset.length} preset tests) for ${caseType} encounter`,
+          performedBy: userId,
         });
       }
     } catch (err) {

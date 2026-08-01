@@ -41,6 +41,9 @@ export async function POST(req: Request) {
   if (!fullName || !role) {
     return Response.json({ error: "fullName and role are required" }, { status: 400 });
   }
+  if (!["intern", "resident", "admin"].includes(role)) {
+    return Response.json({ error: "role must be intern, resident or admin" }, { status: 400 });
+  }
   if (!email && !phone) {
     return Response.json({ error: "email or phone is required" }, { status: 400 });
   }

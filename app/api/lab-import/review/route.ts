@@ -1,7 +1,6 @@
-import { requireRole } from "@/lib/api";
+import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
-import { toObjectId } from "@/lib/api";
 import type { LabImport, Patient } from "@/lib/models/types";
 import { fillLabPanel, normalizeName } from "@/lib/lab-panel";
 
@@ -14,7 +13,7 @@ export async function POST(req: Request) {
 
   const body = await req.json();
   const { importId, medicalNumber, fullName } = body;
-  if (!importId) return Response.json({ error: "importId is required" }, { status: 400 });
+  if (!importId || !isValidObjectId(importId)) return Response.json({ error: "importId is required" }, { status: 400 });
 
   const db = await getDb();
   const labImport = await db.collection<LabImport>("labImports").findOne({ _id: toObjectId(importId) });
@@ -33,6 +32,13 @@ export async function POST(req: Request) {
     };
     const res = await db.collection<Patient>("patients").insertOne(patient);
     patient._id = res.insertedId;
+    void logAudit({
+      collection: "patients",
+      documentId: res.insertedId,
+      action: "create",
+      summary: `Created patient ${fullName} (${medicalNumber}) while reviewing lab import`,
+      performedBy: userId,
+    });
   }
 
   if (!patient) {

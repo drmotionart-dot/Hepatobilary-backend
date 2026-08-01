@@ -1,7 +1,6 @@
-import { requireRole } from "@/lib/api";
+import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
-import { toObjectId } from "@/lib/api";
 import type { Db } from "mongodb";
 import type { OperationForm, User } from "@/lib/models/types";
 
@@ -20,6 +19,7 @@ export async function GET(req: Request) {
   const db = await getDb();
 
   if (encounterId) {
+    if (!isValidObjectId(encounterId)) return Response.json({ error: "Invalid encounterId" }, { status: 400 });
     const form = await db.collection<OperationForm>("operationForms").findOne({ encounterId: toObjectId(encounterId) });
     return Response.json(form ? await withSurgeonName(db, form) : null);
   }
@@ -42,6 +42,9 @@ export async function POST(req: Request) {
   const { encounterId, patientNo, procedureName } = body;
   if (!encounterId || !procedureName) {
     return Response.json({ error: "encounterId and procedureName are required" }, { status: 400 });
+  }
+  if (!isValidObjectId(encounterId)) {
+    return Response.json({ error: "Invalid encounterId" }, { status: 400 });
   }
 
   const db = await getDb();

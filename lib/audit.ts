@@ -19,6 +19,6 @@ export async function logAudit(entry: {
     const db = await getDb();
     await db.collection<AuditLog>("auditLogs").insertOne(doc);
   } catch (err) {
-    console.error("Audit log write failed:", err);
+    console.error(`Audit log write failed: ${entry.collection}/${entry.action} doc=${entry.documentId}`, err);
   }
 }

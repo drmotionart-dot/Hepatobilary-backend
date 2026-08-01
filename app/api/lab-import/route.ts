@@ -1,7 +1,6 @@
-import { requireSession } from "@/lib/api";
+import { requireSession, requireRole, toObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
-import { toObjectId } from "@/lib/api";
 import { fillLabPanel, normalizeName } from "@/lib/lab-panel";
 import type { LabImport, LabImportExtractedTest, LabTestNameMapping, Patient, Encounter } from "@/lib/models/types";
 
@@ -33,8 +32,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await requireSession();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  // Importing lab PDFs is intern/resident only (spec §7 — admin reads).
+  const session = await requireRole(["intern", "resident"]);
+  if (!session) return Response.json({ error: "Intern or resident only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const formData = await req.formData();
@@ -118,8 +118,7 @@ export async function POST(req: Request) {
         message: reviewReason || `Matched → ${matchedPatient?.fullName}`,
       });
     } catch (err: any) {
-      const diag = (err?.stack || err?.message || String(err)).split("\n").slice(0, 6).join(" ~ ");
-      results.push({ fileName: file.name, status: "error", message: `${err?.message} | node ${process.version} | ${diag}` });
+      results.push({ fileName: file.name, status: "error", message: err?.message || "Failed to parse PDF" });
     }
   }
 

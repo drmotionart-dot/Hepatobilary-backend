@@ -14,9 +14,15 @@ export async function GET(req: Request) {
 
   const db = await getDb();
   const filter: Record<string, unknown> = {};
-  if (from && to) {
+  if (from || to) {
+    if (!from || !to) {
+      return Response.json({ error: "from and to must both be provided" }, { status: 400 });
+    }
     const start = new Date(from);
     const end = new Date(to);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return Response.json({ error: "Invalid date range" }, { status: 400 });
+    }
     end.setDate(end.getDate() + 1);
     filter.date = { $gte: start, $lt: end };
   }
@@ -38,6 +44,7 @@ export async function POST(req: Request) {
 
   const db = await getDb();
   const start = new Date(date);
+  if (Number.isNaN(start.getTime())) return Response.json({ error: "Invalid date" }, { status: 400 });
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
   end.setDate(end.getDate() + 1);

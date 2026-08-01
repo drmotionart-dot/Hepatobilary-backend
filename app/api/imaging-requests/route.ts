@@ -1,7 +1,6 @@
-import { requireSession, requireRole } from "@/lib/api";
+import { requireSession, requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
-import { toObjectId } from "@/lib/api";
 import type { ImagingRequest } from "@/lib/models/types";
 
 export async function GET(req: Request) {
@@ -12,6 +11,9 @@ export async function GET(req: Request) {
   const encounterId = url.searchParams.get("encounterId");
   const db = await getDb();
 
+  if (encounterId && !isValidObjectId(encounterId)) {
+    return Response.json({ error: "Invalid encounterId" }, { status: 400 });
+  }
   const filter = encounterId ? { encounterId: toObjectId(encounterId) } : {};
   const requests = await db.collection<ImagingRequest>("imagingRequests").find(filter).sort({ requestedAt: -1 }).toArray();
   return Response.json(requests);
@@ -27,6 +29,9 @@ export async function POST(req: Request) {
   const { encounterId, modality, modalityDetail, clinicalDiagnosis, pertinentClinicalData, partToBeExamined, aimOfExamination } = body;
   if (!encounterId || !modality || !partToBeExamined) {
     return Response.json({ error: "encounterId, modality and partToBeExamined are required" }, { status: 400 });
+  }
+  if (!isValidObjectId(encounterId)) {
+    return Response.json({ error: "Invalid encounterId" }, { status: 400 });
   }
 
   const db = await getDb();

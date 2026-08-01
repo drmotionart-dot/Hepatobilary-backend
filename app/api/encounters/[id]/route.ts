@@ -1,13 +1,13 @@
-import { requireSession, requireRole } from "@/lib/api";
+import { requireSession, requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
-import { toObjectId } from "@/lib/api";
 import type { WithId } from "mongodb";
 import type { Encounter, Patient, ClinicalNote, LabPanel, ImagingRequest, ReferralConsult, TreatmentLog, OperationForm, DischargeForm } from "@/lib/models/types";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const session = await requireSession();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isValidObjectId(params.id)) return Response.json({ error: "Invalid encounter id" }, { status: 400 });
 
   const db = await getDb();
   const encounter = await db.collection<Encounter>("encounters").findOne({ _id: toObjectId(params.id) });
@@ -75,6 +75,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const body = await req.json();
   const db = await getDb();
+  if (!isValidObjectId(params.id)) return Response.json({ error: "Invalid encounter id" }, { status: 400 });
   const encounter = await db.collection<Encounter>("encounters").findOne({ _id: toObjectId(params.id) });
   if (!encounter) return Response.json({ error: "Not found" }, { status: 404 });
 

@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { getDb } from "@/lib/mongodb";
 import { signToken } from "@/lib/jwt";
 import { requireSession } from "@/lib/api";
+import { logAudit } from "@/lib/audit";
 import type { User } from "@/lib/models/types";
 
 // POST /api/auth/login — verifies credentials and returns a signed JWT plus
@@ -38,6 +39,13 @@ export async function POST(req: Request) {
   if (user.status === "expired" || (user.expiresAt && user.expiresAt < new Date())) {
     if (user.status !== "expired") {
       await db.collection<User>("users").updateOne({ _id: user._id }, { $set: { status: "expired" } });
+      await logAudit({
+        collection: "users",
+        documentId: user._id!,
+        action: "update",
+        summary: `Account ${user.loginId} auto-expired on login attempt`,
+        performedBy: user._id!,
+      });
     }
     return Response.json({ error: "Account has expired" }, { status: 403 });
   }

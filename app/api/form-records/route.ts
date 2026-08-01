@@ -1,17 +1,19 @@
-import { requireSession } from "@/lib/api";
+import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
-import { toObjectId } from "@/lib/api";
 import type { FormRecord } from "@/lib/models/types";
 
 export async function GET(req: Request) {
-  const session = await requireSession();
+  const session = await requireRole(["intern", "resident", "admin"]);
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const url = new URL(req.url);
   const encounterId = url.searchParams.get("encounterId");
   const db = await getDb();
 
+  if (encounterId && !isValidObjectId(encounterId)) {
+    return Response.json({ error: "Invalid encounterId" }, { status: 400 });
+  }
   const filter = encounterId ? { encounterId: toObjectId(encounterId) } : {};
   const records = await db.collection<FormRecord>("formRecords").find(filter).sort({ createdAt: -1 }).toArray();
 
@@ -29,14 +31,18 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await requireSession();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  // Filling case-type forms is intern/resident only (spec §7).
+  const session = await requireRole(["intern", "resident"]);
+  if (!session) return Response.json({ error: "Intern or resident only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();
   const { encounterId, templateId, values } = body;
   if (!encounterId || !templateId || !values) {
     return Response.json({ error: "encounterId, templateId and values are required" }, { status: 400 });
+  }
+  if (!isValidObjectId(encounterId) || !isValidObjectId(templateId)) {
+    return Response.json({ error: "Invalid encounterId or templateId" }, { status: 400 });
   }
 
   const db = await getDb();

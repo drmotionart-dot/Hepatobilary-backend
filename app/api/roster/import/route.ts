@@ -103,16 +103,27 @@ export async function POST(req: Request) {
               : slotKey(slots, dayType, target.shift, "none");
 
         if (dayType === "emergency") {
-          const res = await db.collection("emergencyDayPools").updateOne(
+          const res = await db.collection("emergencyDayPools").findOneAndUpdate(
             { date, shiftType: target.shift },
             {
               $setOnInsert: { date, shiftType: target.shift, createdBy: importerId, createdAt: now },
               $addToSet: userId ? { userIds: toObjectId(userId) } : {},
             },
-            { upsert: true }
+            { upsert: true, includeResultMetadata: true }
           );
-          if (res.upsertedCount) poolsCreated++;
+          const poolDoc = res.value;
+          const poolNew = Boolean(res.lastErrorObject?.upserted);
+          if (poolNew) poolsCreated++;
           else if (userId) poolsUpdated++;
+          if (poolDoc) {
+            void logAudit({
+              collection: "emergencyDayPools",
+              documentId: poolDoc._id,
+              action: poolNew ? "create" : "update",
+              summary: `Roster import ${poolNew ? "created" : "updated"} ${target.shift} pool on ${dateKey(date)}${userId ? ` — ${entry.name}` : ""}`,
+              performedBy: importerId,
+            });
+          }
           rows.push({
             date: dateKey(date),
             target: `pool:${target.shift}`,
@@ -127,16 +138,27 @@ export async function POST(req: Request) {
             unmatched.push(rows[rows.length - 1]);
             continue;
           }
-          const res = await db.collection("shiftAssignments").updateOne(
+          const res = await db.collection("shiftAssignments").findOneAndUpdate(
             { date, roleSlotDefinitionId: targetKey },
             {
               $setOnInsert: { date, roleSlotDefinitionId: targetKey },
               $addToSet: userId ? { userIds: toObjectId(userId) } : {},
             },
-            { upsert: true }
+            { upsert: true, includeResultMetadata: true }
           );
-          if (res.upsertedCount) assignmentsCreated++;
+          const assignDoc = res.value;
+          const assignNew = Boolean(res.lastErrorObject?.upserted);
+          if (assignNew) assignmentsCreated++;
           else if (userId) assignmentsUpdated++;
+          if (assignDoc) {
+            void logAudit({
+              collection: "shiftAssignments",
+              documentId: assignDoc._id,
+              action: assignNew ? "create" : "update",
+              summary: `Roster import ${assignNew ? "created" : "updated"} slot ${targetKey} on ${dateKey(date)}${userId ? ` — ${entry.name}` : ""}`,
+              performedBy: importerId,
+            });
+          }
           rows.push({
             date: dateKey(date),
             target: `slot:${targetKey.toString()}`,

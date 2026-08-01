@@ -1,11 +1,11 @@
-import { requireSession } from "@/lib/api";
+import { requireRole } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import { toObjectId } from "@/lib/api";
 import type { Patient } from "@/lib/models/types";
 
 export async function GET(req: Request) {
-  const session = await requireSession();
+  const session = await requireRole(["intern", "resident", "admin"]);
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const url = new URL(req.url);
@@ -32,14 +32,22 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await requireSession();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  // Creating patients is intern/resident only (spec §7 — admin reads).
+  const session = await requireRole(["intern", "resident"]);
+  if (!session) return Response.json({ error: "Intern or resident only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();
   const { medicalNumber, fullName, sex, age } = body;
   if (!medicalNumber || !fullName || !sex || !age) {
     return Response.json({ error: "medicalNumber, fullName, sex and age are required" }, { status: 400 });
+  }
+  if (!["male", "female"].includes(sex)) {
+    return Response.json({ error: "sex must be male or female" }, { status: 400 });
+  }
+  const ageNum = Number(age);
+  if (!Number.isFinite(ageNum) || ageNum < 0 || ageNum > 130) {
+    return Response.json({ error: "age must be a number between 0 and 130" }, { status: 400 });
   }
 
   const db = await getDb();
@@ -53,7 +61,7 @@ export async function POST(req: Request) {
     medicalNumber,
     fullName,
     sex,
-    age: Number(age),
+    age: ageNum,
     createdAt: now,
     updatedAt: now,
   };

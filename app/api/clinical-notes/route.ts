@@ -1,7 +1,6 @@
-import { requireSession, requireRole } from "@/lib/api";
+import { requireSession, requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
-import { toObjectId } from "@/lib/api";
 import type { ClinicalNote } from "@/lib/models/types";
 
 export async function GET(req: Request) {
@@ -12,6 +11,9 @@ export async function GET(req: Request) {
   const encounterId = url.searchParams.get("encounterId");
   const db = await getDb();
 
+  if (encounterId && !isValidObjectId(encounterId)) {
+    return Response.json({ error: "Invalid encounterId" }, { status: 400 });
+  }
   const filter = encounterId ? { encounterId: toObjectId(encounterId) } : {};
   const notes = await db
     .collection<ClinicalNote>("clinicalNotes")
@@ -33,6 +35,9 @@ export async function POST(req: Request) {
 
   if (!encounterId || !context) {
     return Response.json({ error: "encounterId and context are required" }, { status: 400 });
+  }
+  if (!isValidObjectId(encounterId)) {
+    return Response.json({ error: "Invalid encounterId" }, { status: 400 });
   }
 
   const db = await getDb();

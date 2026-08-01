@@ -2,6 +2,7 @@ import { getDb } from "@/lib/mongodb";
 import bcrypt from "bcryptjs";
 import type { User } from "@/lib/models/types";
 import { normalizePhone } from "@/lib/roster-import";
+import { logAudit } from "@/lib/audit";
 
 // Self-registration (spec 10.1): accounts land in pending-approval and stay
 // there until an admin approves them. They never expire. The loginId is the
@@ -12,6 +13,9 @@ export async function POST(req: Request) {
   const { fullName, email, password, role, phone } = body;
   if (!fullName || !email || !password) {
     return Response.json({ error: "fullName, email and password are required" }, { status: 400 });
+  }
+  if (String(password).length < 8) {
+    return Response.json({ error: "Password must be at least 8 characters" }, { status: 400 });
   }
   if (!["intern", "resident"].includes(role)) {
     return Response.json({ error: "role must be intern or resident" }, { status: 400 });
@@ -44,7 +48,15 @@ export async function POST(req: Request) {
     createdAt: now,
     updatedAt: now,
   };
-  await db.collection<User>("users").insertOne(user);
+  const res = await db.collection<User>("users").insertOne(user);
+
+  await logAudit({
+    collection: "users",
+    documentId: res.insertedId,
+    action: "create",
+    summary: `Self-registration submitted for ${fullName} (${loginId}, ${role}) — pending approval`,
+    performedBy: res.insertedId,
+  });
 
   return Response.json(
     { ok: true, message: "Registration submitted. An admin must approve your account before you can log in." },

@@ -1,4 +1,4 @@
-import { requireRole, toObjectId } from "@/lib/api";
+import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import type { ShiftAssignment, RoleSlotDefinition } from "@/lib/models/types";
@@ -16,6 +16,9 @@ export async function POST(req: Request) {
   const { date, roleSlotDefinitionId } = body;
   if (!date || !roleSlotDefinitionId) {
     return Response.json({ error: "date and roleSlotDefinitionId are required" }, { status: 400 });
+  }
+  if (!isValidObjectId(roleSlotDefinitionId)) {
+    return Response.json({ error: "Invalid roleSlotDefinitionId" }, { status: 400 });
   }
 
   const start = new Date(date);
@@ -41,6 +44,19 @@ export async function POST(req: Request) {
 
   const end = new Date(start);
   end.setDate(end.getDate() + 1);
+
+  // The slot must actually run that day: its day type has to match the date's
+  // calendar entry (emergency days route through pools, not base slots) and a
+  // weekdays restriction (e.g. Friday-only ward prep) must include this day —
+  // the same rules bulk-generate applies.
+  const dayTypeDoc = await db.collection("dayTypeCalendar").findOne({ date: { $gte: start, $lt: end } });
+  const dayType = (dayTypeDoc as any)?.dayType || "normal";
+  if (slot.dayType !== dayType) {
+    return Response.json({ error: "This slot does not run on that date's day type" }, { status: 400 });
+  }
+  if (Array.isArray(slot.weekdays) && slot.weekdays.length > 0 && !slot.weekdays.includes(start.getDay())) {
+    return Response.json({ error: "This slot is only bookable on its scheduled weekdays" }, { status: 400 });
+  }
 
   const me = actingId.toString();
   const existing = await db.collection<ShiftAssignment>("shiftAssignments").findOne({

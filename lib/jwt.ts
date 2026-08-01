@@ -4,7 +4,11 @@ import { SignJWT } from "jose";
 // never shares session storage with this app — it receives this token at
 // login and presents it as `Authorization: Bearer <token>` on every request.
 
-const JWT_SECRET = process.env.JWT_SECRET || "insecure-dev-secret";
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET || JWT_SECRET.length < 32 || JWT_SECRET.includes("replace-with-a-random")) {
+  throw new Error("Missing or weak JWT_SECRET — copy .env.example to .env.local and set a random 32+ byte secret.");
+}
 const secretKey = new TextEncoder().encode(JWT_SECRET);
 
 export const TOKEN_TTL_SECONDS = 8 * 60 * 60; // 8h, matches a work day + night shift

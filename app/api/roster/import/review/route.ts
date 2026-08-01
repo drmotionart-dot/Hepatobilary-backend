@@ -1,4 +1,4 @@
-import { requireRole, toObjectId } from "@/lib/api";
+import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import type { Db, ObjectId } from "mongodb";
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     return await createAllAccounts(db, actorId);
   }
 
-  if (!importId) return Response.json({ error: "importId is required" }, { status: 400 });
+  if (!importId || !isValidObjectId(importId)) return Response.json({ error: "importId is required" }, { status: 400 });
   const imp = await db.collection<RosterImport>("rosterImports").findOne({ _id: toObjectId(importId) });
   if (!imp) return Response.json({ error: "Import not found" }, { status: 404 });
 
@@ -103,7 +103,7 @@ export async function POST(req: Request) {
     return Response.json({ ok: true });
   }
 
-  if (!assigneeId) {
+  if (!assigneeId || !isValidObjectId(assigneeId)) {
     return Response.json({ error: "userId, ignore, or create action is required" }, { status: 400 });
   }
 
@@ -255,7 +255,8 @@ async function createAccountForRow(
   };
 }
 
-// Assign a user into the row's ShiftAssignment slot or EmergencyDayPool.
+// Assign a user into the row's ShiftAssignment slot or EmergencyDayPool. Every
+// target write is audit-logged on its own collection (spec 7.1).
 async function bindToTarget(db: Db, row: RosterImportRow, assigneeId: ObjectId, actorId: ObjectId): Promise<boolean> {
   const date = parseDateCell(row.date);
   if (!date) return false;
@@ -263,20 +264,43 @@ async function bindToTarget(db: Db, row: RosterImportRow, assigneeId: ObjectId, 
 
   if (row.target.startsWith("pool:")) {
     const shiftType = row.target.slice("pool:".length);
-    await db.collection("emergencyDayPools").updateOne(
+    const res = await db.collection("emergencyDayPools").findOneAndUpdate(
       { date: localDate, shiftType },
       { $setOnInsert: { date: localDate, shiftType, createdBy: actorId, createdAt: new Date() }, $addToSet: { userIds: assigneeId } },
-      { upsert: true }
+      { upsert: true, includeResultMetadata: true }
     );
+    const poolDoc = res.value;
+    const poolNew = Boolean(res.lastErrorObject?.upserted);
+    if (poolDoc) {
+      void logAudit({
+        collection: "emergencyDayPools",
+        documentId: poolDoc._id,
+        action: poolNew ? "create" : "update",
+        summary: `Bound ${assigneeId} to ${shiftType} pool on ${row.date}`,
+        performedBy: actorId,
+      });
+    }
     return true;
   }
   if (row.target.startsWith("slot:")) {
     const slotId = row.target.slice("slot:".length);
-    await db.collection("shiftAssignments").updateOne(
+    if (!isValidObjectId(slotId)) return false;
+    const res = await db.collection("shiftAssignments").findOneAndUpdate(
       { date: localDate, roleSlotDefinitionId: toObjectId(slotId) },
       { $setOnInsert: { date: localDate, roleSlotDefinitionId: toObjectId(slotId) }, $addToSet: { userIds: assigneeId } },
-      { upsert: true }
+      { upsert: true, includeResultMetadata: true }
     );
+    const assignDoc = res.value;
+    const assignNew = Boolean(res.lastErrorObject?.upserted);
+    if (assignDoc) {
+      void logAudit({
+        collection: "shiftAssignments",
+        documentId: assignDoc._id,
+        action: assignNew ? "create" : "update",
+        summary: `Bound ${assigneeId} to slot ${slotId} on ${row.date}`,
+        performedBy: actorId,
+      });
+    }
     return true;
   }
   return false;

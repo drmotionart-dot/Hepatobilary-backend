@@ -26,6 +26,35 @@ function createClient(): MongoClient {
   });
 }
 
+// One-shot index bootstrap (spec 3.13 — roster/day-type lookups are the hot path
+// in dashboard, self-book, roster/board and roster/export). Runs once per
+// process; a failure logs loudly but never breaks requests.
+let ensureIndexesPromise: Promise<void> | null = null;
+
+function ensureIndexes(db: Db): Promise<void> {
+  if (!ensureIndexesPromise) {
+    ensureIndexesPromise = Promise.all([
+      db.collection("users").createIndex({ loginId: 1 }, { unique: true }),
+      db.collection("users").createIndex({ email: 1 }, { unique: true, sparse: true }),
+      db.collection("users").createIndex({ phone: 1 }, { unique: true, sparse: true }),
+      db.collection("patients").createIndex({ medicalNumber: 1 }, { unique: true, sparse: true }),
+      db.collection("encounters").createIndex({ status: 1, type: 1 }),
+      db.collection("encounters").createIndex({ patientId: 1, date: -1 }),
+      db.collection("shiftAssignments").createIndex({ date: 1, roleSlotDefinitionId: 1 }),
+      db.collection("dayTypeCalendar").createIndex({ date: 1 }, { unique: true }),
+      db.collection("clinicalNotes").createIndex({ encounterId: 1 }),
+      db.collection("labPanels").createIndex({ encounterId: 1 }),
+      db.collection("auditLogs").createIndex({ performedAt: -1 }),
+      db.collection("labImports").createIndex({ status: 1 }),
+    ])
+      .then(() => undefined)
+      .catch((err) => {
+        console.error("ensureIndexes failed:", err);
+      });
+  }
+  return ensureIndexesPromise;
+}
+
 export async function getDb(): Promise<Db> {
   const cached = globalForMongo._hpbMongoClient;
   if (cached) return cached.db(dbName);
@@ -33,5 +62,7 @@ export async function getDb(): Promise<Db> {
   const client = createClient();
   await client.connect();
   globalForMongo._hpbMongoClient = client;
-  return client.db(dbName);
+  const db = client.db(dbName);
+  void ensureIndexes(db);
+  return db;
 }

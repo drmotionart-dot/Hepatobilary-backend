@@ -1,7 +1,6 @@
-import { requireSession, requireRole } from "@/lib/api";
+import { requireSession, requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
-import { toObjectId } from "@/lib/api";
 import type { LabPanel } from "@/lib/models/types";
 
 export async function GET(req: Request) {
@@ -16,6 +15,7 @@ export async function GET(req: Request) {
     const panels = await db.collection<LabPanel>("labPanels").find().sort({ createdAt: -1 }).toArray();
     return Response.json(panels);
   }
+  if (!isValidObjectId(encounterId)) return Response.json({ error: "Invalid encounterId" }, { status: 400 });
 
   const panel = await db.collection<LabPanel>("labPanels").findOne({ encounterId: toObjectId(encounterId) });
   return Response.json(panel || null);
@@ -31,6 +31,9 @@ export async function POST(req: Request) {
   const { encounterId, date, category, test, value, unit, refRange, abnormal } = body;
   if (!encounterId || !test) {
     return Response.json({ error: "encounterId and test are required" }, { status: 400 });
+  }
+  if (!isValidObjectId(encounterId)) {
+    return Response.json({ error: "Invalid encounterId" }, { status: 400 });
   }
 
   const db = await getDb();

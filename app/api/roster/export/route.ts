@@ -15,8 +15,10 @@ export async function GET(req: Request) {
   const toParam = url.searchParams.get("to");
 
   const from = new Date(fromParam || dateKey(new Date()));
+  if (Number.isNaN(from.getTime())) return Response.json({ error: "Invalid from date" }, { status: 400 });
   from.setHours(0, 0, 0, 0);
   const to = new Date(toParam || new Date(from));
+  if (Number.isNaN(to.getTime())) return Response.json({ error: "Invalid to date" }, { status: 400 });
   to.setHours(0, 0, 0, 0);
   if (toParam) to.setDate(to.getDate() + 1);
   else to.setDate(to.getDate() + 14);

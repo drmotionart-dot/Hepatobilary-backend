@@ -1,7 +1,6 @@
-import { requireSession } from "@/lib/api";
+import { requireSession, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
-import { toObjectId } from "@/lib/api";
 import type { ImagingRequest } from "@/lib/models/types";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -11,6 +10,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const body = await req.json();
   const db = await getDb();
+  if (!isValidObjectId(params.id)) return Response.json({ error: "Invalid imaging request id" }, { status: 400 });
   const existing = await db.collection<ImagingRequest>("imagingRequests").findOne({ _id: toObjectId(params.id) });
   if (!existing) return Response.json({ error: "Not found" }, { status: 404 });
 

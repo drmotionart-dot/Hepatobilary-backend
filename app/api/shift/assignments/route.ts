@@ -1,9 +1,9 @@
-import { requireRole } from "@/lib/api";
+import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import { ObjectId } from "mongodb";
-import { toObjectId } from "@/lib/api";
 import type { ShiftAssignment, RoleSlotDefinition } from "@/lib/models/types";
+import { localDateKey } from "@/lib/shift";
 
 export async function GET(req: Request) {
   const session = await requireRole(["intern", "resident", "admin"]);
@@ -19,6 +19,7 @@ export async function GET(req: Request) {
   }
 
   const start = new Date(date);
+  if (Number.isNaN(start.getTime())) return Response.json({ error: "Invalid date" }, { status: 400 });
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
   end.setDate(end.getDate() + 1);
@@ -69,8 +70,12 @@ export async function POST(req: Request) {
   if (!date || !roleSlotDefinitionId) {
     return Response.json({ error: "date and roleSlotDefinitionId are required (or from/to for bulk)" }, { status: 400 });
   }
+  if (!isValidObjectId(roleSlotDefinitionId)) {
+    return Response.json({ error: "Invalid roleSlotDefinitionId" }, { status: 400 });
+  }
 
   const start = new Date(date);
+  if (Number.isNaN(start.getTime())) return Response.json({ error: "Invalid date" }, { status: 400 });
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
   end.setDate(end.getDate() + 1);
@@ -134,14 +139,18 @@ export async function POST(req: Request) {
 async function bulkGenerate(from: string, to: string, userId: any) {
   const db = await getDb();
   const start = new Date(from);
-  start.setHours(0, 0, 0, 0);
   const end = new Date(to);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return Response.json({ error: "Invalid date range" }, { status: 400 });
+  }
+  start.setHours(0, 0, 0, 0);
   end.setHours(0, 0, 0, 0);
   end.setDate(end.getDate() + 1);
+  if (start >= end) return Response.json({ error: "from must be before to" }, { status: 400 });
 
   const dayTypes = await db.collection("dayTypeCalendar").find({ date: { $gte: start, $lt: end } }).toArray();
   const dayTypeMap = new Map(
-    dayTypes.map((d: any) => [new Date(d.date).toISOString().slice(0, 10), d])
+    dayTypes.map((d: any) => [localDateKey(new Date(d.date)), d])
   );
 
   const slots = await db.collection<RoleSlotDefinition>("roleSlotDefinitions").find().toArray();
@@ -156,14 +165,14 @@ async function bulkGenerate(from: string, to: string, userId: any) {
     .find({ date: { $gte: start, $lt: end } })
     .toArray();
   const existingKeys = new Set(
-    existing.map((a) => `${a.date.toISOString().slice(0, 10)}:${a.roleSlotDefinitionId.toString()}`)
+    existing.map((a) => `${localDateKey(new Date(a.date))}:${a.roleSlotDefinitionId.toString()}`)
   );
 
   const toInsert: ShiftAssignment[] = [];
   let created = 0;
 
   for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
-    const key = d.toISOString().slice(0, 10);
+    const key = localDateKey(d);
     const dayType = (dayTypeMap.get(key)?.dayType as string) || "normal";
     const surgeryOverlay = dayTypeMap.get(key)?.surgeryOverlay || false;
 

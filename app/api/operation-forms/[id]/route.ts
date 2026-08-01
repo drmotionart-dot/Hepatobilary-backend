@@ -1,7 +1,6 @@
-import { requireRole } from "@/lib/api";
+import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
-import { toObjectId } from "@/lib/api";
 import type { OperationForm } from "@/lib/models/types";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -11,6 +10,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const body = await req.json();
   const db = await getDb();
+  if (!isValidObjectId(params.id)) return Response.json({ error: "Invalid operation form id" }, { status: 400 });
   const existing = await db.collection<OperationForm>("operationForms").findOne({ _id: toObjectId(params.id) });
   if (!existing) return Response.json({ error: "Not found" }, { status: 404 });
 

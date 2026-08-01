@@ -1,7 +1,6 @@
-import { requireSession, requireRole } from "@/lib/api";
+import { requireSession, requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
-import { toObjectId } from "@/lib/api";
 import type { TreatmentLog } from "@/lib/models/types";
 
 export async function GET(req: Request) {
@@ -13,6 +12,7 @@ export async function GET(req: Request) {
   const db = await getDb();
 
   if (encounterId) {
+    if (!isValidObjectId(encounterId)) return Response.json({ error: "Invalid encounterId" }, { status: 400 });
     const log = await db.collection<TreatmentLog>("treatmentLogs").findOne({ encounterId: toObjectId(encounterId) });
     return Response.json(log || null);
   }
@@ -30,6 +30,9 @@ export async function POST(req: Request) {
   const { encounterId, treatment, otherRecommendations, date } = body;
   if (!encounterId || !treatment) {
     return Response.json({ error: "encounterId and treatment are required" }, { status: 400 });
+  }
+  if (!isValidObjectId(encounterId)) {
+    return Response.json({ error: "Invalid encounterId" }, { status: 400 });
   }
 
   const db = await getDb();

@@ -2,16 +2,18 @@
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import type { DayTypeCalendar, ShiftAssignment, RoleSlotDefinition, User } from "@/lib/models/types";
+import { activeShiftDate } from "@/lib/shift";
 
-// Who is on shift today (spec section 7): resolve today's day type, then
-// return the assignments for today grouped by shift window.
+// Who is on shift now (spec section 7): resolve the active shift's day type,
+// then return the assignments for that day grouped by shift window. Uses the
+// same 08:00 → 08:00 shift boundary as the dashboard, so before 08:00 "on
+// shift now" means the previous calendar day.
 export async function GET() {
   const session = await requireSession();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const db = await getDb();
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
+  const startOfDay = activeShiftDate();
   const endOfDay = new Date(startOfDay);
   endOfDay.setDate(endOfDay.getDate() + 1);
 
