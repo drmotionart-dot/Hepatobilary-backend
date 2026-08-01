@@ -7,13 +7,14 @@ import { createBulkAccount, generateLoginId } from "@/lib/account-factory";
 import { normalizePhone } from "@/lib/roster-import";
 import { ObjectId } from "mongodb";
 
-// User management. GET lists all users for residents + admins (approvals and
-// account lifecycle are shared duties); POST creates accounts — the Excel
-// rotation bulk import is resident+admin (spec 10.2), single manual account
-// creation stays admin-only (spec 11.8).
+// User management. GET lists all users for admins only — account management
+// (approvals and lifecycle) is admin-only (spec §7); residents use the Round
+// Interns directory (GET /api/admin/interns) instead. POST creates accounts —
+// the Excel rotation bulk import is resident+admin (spec 10.2), single manual
+// account creation stays admin-only (spec 11.8).
 export async function GET() {
-  const session = await requireRole(["admin", "resident"]);
-  if (!session) return Response.json({ error: "Admin or resident only" }, { status: 403 });
+  const session = await requireRole(["admin"]);
+  if (!session) return Response.json({ error: "Admin only" }, { status: 403 });
 
   const db = await getDb();
   const users = await db

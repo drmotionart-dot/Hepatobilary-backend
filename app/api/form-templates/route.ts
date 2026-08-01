@@ -14,9 +14,10 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  // Managing the FormTemplate library is admin only (spec §7).
-  const session = await requireRole(["admin"]);
-  if (!session) return Response.json({ error: "Admin only" }, { status: 403 });
+  // Managing the FormTemplate library is part of the resident panel
+  // (spec §7), alongside admins.
+  const session = await requireRole(["resident", "admin"]);
+  if (!session) return Response.json({ error: "Resident or admin only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();

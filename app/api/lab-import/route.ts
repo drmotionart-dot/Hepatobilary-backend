@@ -34,7 +34,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   // Importing lab PDFs is intern/resident/admin (spec §7, amended).
   const session = await requireRole(["intern", "resident", "admin"]);
-  if (!session) return Response.json({ error: "Intern or resident only" }, { status: 403 });
+  if (!session) return Response.json({ error: "Intern, resident or admin only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
   const formData = await req.formData();

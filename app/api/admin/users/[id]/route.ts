@@ -4,8 +4,10 @@ import { logAudit } from "@/lib/audit";
 import type { User } from "@/lib/models/types";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await requireRole(["admin", "resident"]);
-  if (!session) return Response.json({ error: "Admin or resident only" }, { status: 403 });
+  // All account lifecycle actions are admin-only (spec §7 — account management
+  // is not part of the resident panel).
+  const session = await requireRole(["admin"]);
+  if (!session) return Response.json({ error: "Admin only" }, { status: 403 });
   const actingId = toObjectId((session.user as any).id);
 
   const body = await req.json();
@@ -16,9 +18,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const update: Record<string, unknown> = { updatedAt: new Date() };
 
-  // Approve / reject / remove / reinstate / expire are open to residents and
-  // admins (spec §11 — account lifecycle is a shared duty). Field-level edits
-  // (role, status, mustChangePassword) stay admin-only below.
   if (body.action === "approve") {
     update.status = "active";
     update.approvedBy = actingId;
@@ -33,9 +32,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     update.status = "active";
     update.approvedAt = new Date();
   } else {
-    if (session.user.role !== "admin") {
-      return Response.json({ error: "Admin only" }, { status: 403 });
-    }
     const allowed = ["role", "status", "mustChangePassword"];
     for (const key of allowed) {
       if (body[key] !== undefined) update[key] = body[key];
