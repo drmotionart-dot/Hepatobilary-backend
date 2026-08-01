@@ -2,10 +2,11 @@ import { requireRole } from "@/lib/api";
 
 // GET /api/admin/users/template — generates a blank rotation template (.xlsx)
 // with exactly the three columns the import step expects back: Name, Email,
-// Number (spec 10.2). Pure file generation, no database read.
+// Number (spec 10.2). Resident+admin both run the rotation import round-trip
+// (download → fill → upload), so both may download the template.
 export async function GET() {
-  const session = await requireRole(["admin"]);
-  if (!session) return Response.json({ error: "Admin only" }, { status: 403 });
+  const session = await requireRole(["admin", "resident"]);
+  if (!session) return Response.json({ error: "Admin or resident only" }, { status: 403 });
 
   const XLSX = await import("xlsx");
 
