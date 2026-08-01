@@ -1,7 +1,8 @@
 ﻿import { requireSession } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
-import type { DayTypeCalendar, ShiftAssignment, RoleSlotDefinition, User } from "@/lib/models/types";
+import { resolveDayType } from "@/lib/day-type";
+import type { ShiftAssignment, RoleSlotDefinition, User } from "@/lib/models/types";
 import { activeShiftDate } from "@/lib/shift";
 
 // Who is on shift now (spec section 7): resolve the active shift's day type,
@@ -17,10 +18,11 @@ export async function GET() {
   const endOfDay = new Date(startOfDay);
   endOfDay.setDate(endOfDay.getDate() + 1);
 
-  const dayTypeDoc = await db.collection<DayTypeCalendar>("dayTypeCalendar").findOne({
-    date: { $gte: startOfDay, $lt: endOfDay },
-  });
-  const dayType = dayTypeDoc?.dayType || "normal";
+  // Stored DayTypeCalendar wins; otherwise weekday default (Thu→clinic,
+  // Sun/Wed→normal+surgeryOverlay, else normal).
+  const resolved = await resolveDayType(startOfDay);
+  const dayType = resolved.dayType;
+  const surgeryOverlay = resolved.surgeryOverlay;
 
   const assignments = await db.collection<ShiftAssignment>("shiftAssignments")
     .find({ date: { $gte: startOfDay, $lt: endOfDay } })
@@ -44,6 +46,6 @@ export async function GET() {
     users: (a.userIds || []).map((u) => userMap.get(u.toString()) || null).filter(Boolean),
   }));
 
-  return Response.json({ dayType, surgeryOverlay: dayTypeDoc?.surgeryOverlay || false, assignments: grouped });
+  return Response.json({ dayType, surgeryOverlay, assignments: grouped });
 }
 

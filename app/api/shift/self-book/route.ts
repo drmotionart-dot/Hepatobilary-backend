@@ -1,6 +1,7 @@
 import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
+import { resolveDayType } from "@/lib/day-type";
 import type { ShiftAssignment, RoleSlotDefinition } from "@/lib/models/types";
 
 // Intern self-booking (spec 6.1: "free-for-all booking" — interns claim open
@@ -46,12 +47,11 @@ export async function POST(req: Request) {
   end.setDate(end.getDate() + 1);
 
   // The slot must actually run that day: its day type has to match the date's
-  // calendar entry (emergency days route through pools, not base slots) and a
-  // weekdays restriction (e.g. Friday-only ward prep) must include this day —
-  // the same rules bulk-generate applies.
-  const dayTypeDoc = await db.collection("dayTypeCalendar").findOne({ date: { $gte: start, $lt: end } });
-  const dayType = (dayTypeDoc as any)?.dayType || "normal";
-  if (slot.dayType !== dayType) {
+  // resolved day type (stored calendar wins, weekday default otherwise; e.g.
+  // Thursday → clinic) and a weekdays restriction (e.g. Friday-only ward prep)
+  // must include this day — the same rules bulk-generate applies.
+  const resolved = await resolveDayType(start);
+  if (slot.dayType !== resolved.dayType) {
     return Response.json({ error: "This slot does not run on that date's day type" }, { status: 400 });
   }
   if (Array.isArray(slot.weekdays) && slot.weekdays.length > 0 && !slot.weekdays.includes(start.getDay())) {

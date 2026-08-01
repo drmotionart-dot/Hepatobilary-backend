@@ -19,6 +19,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   delete update.reviewedBy;
   delete update.reviewedAt;
 
+  // reviewNoteId links the specialist's ClinicalNote (context: "specialty-consult")
+  if (body.reviewNoteId !== undefined) {
+    if (!isValidObjectId(body.reviewNoteId)) {
+      return Response.json({ error: "Invalid reviewNoteId" }, { status: 400 });
+    }
+    update.reviewNoteId = toObjectId(body.reviewNoteId);
+  }
+
   if (update.status === "reviewed") {
     if (!existing.recommendations && !existing.imageData && !update.recommendations && !update.imageData) {
       return Response.json({ error: "Add recommendations or attach a photo before marking done" }, { status: 400 });

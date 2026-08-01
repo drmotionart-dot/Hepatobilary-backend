@@ -1,7 +1,6 @@
 import bcrypt from "bcryptjs";
 import { getDb } from "@/lib/mongodb";
 import { signToken } from "@/lib/jwt";
-import { requireSession } from "@/lib/api";
 import { logAudit } from "@/lib/audit";
 import type { User } from "@/lib/models/types";
 
@@ -72,12 +71,4 @@ export async function POST(req: Request) {
       mustChangePassword: user.mustChangePassword,
     },
   });
-}
-
-// GET /api/auth/me — returns the currently authenticated user (used to
-// re-validate a token client-side without re-logging in).
-export async function GET() {
-  const session = await requireSession();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
-  return Response.json({ user: session.user });
 }

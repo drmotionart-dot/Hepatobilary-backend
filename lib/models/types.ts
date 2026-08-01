@@ -8,6 +8,15 @@ export type Role = "intern" | "resident" | "admin";
 export type AccountType = "self-registered" | "bulk-generated";
 export type AccountStatus = "pending-approval" | "active" | "expired" | "removed";
 
+// Granular capability grants (spec 11.7) — a resident-level utility becomes
+// usable by an intern holding the specific grant. Extensible: add new keys here
+// and gate routes with requireCapability.
+export const CAPABILITIES = ["generate-shift-key"] as const;
+export type Capability = (typeof CAPABILITIES)[number];
+export function isCapability(value: unknown): value is Capability {
+  return typeof value === "string" && (CAPABILITIES as readonly string[]).includes(value);
+}
+
 export interface User {
   _id?: ObjectId;
   fullName: string;
@@ -23,6 +32,7 @@ export interface User {
   mustChangePassword: boolean;
   expiresAt?: Date | null; // set for bulk-generated accounts: createdAt + 50 days
   rotationImportId?: ObjectId | null;
+  grantedCapabilities?: Capability[]; // extra resident-level powers granted to an intern (spec 11.7)
   createdAt: Date;
   updatedAt: Date;
 }
@@ -214,6 +224,7 @@ export interface ReferralConsult {
   imageData?: string | null;
   reviewedAt?: Date | null;
   reviewedBy?: ObjectId | null;
+  reviewNoteId?: ObjectId | null; // links the specialist's ClinicalNote (context: "specialty-consult")
 }
 
 export interface TreatmentLogEntry {
@@ -348,4 +359,33 @@ export interface AuditLog {
   summary: string;
   performedBy: ObjectId;
   performedAt: Date;
+  // ShiftKey gate (spec 11.6): which shift key was submitted for a gated action
+  // and whether it matched the key active at the time the action was performed.
+  shiftKey?: string | null;
+  shiftKeyMatched?: boolean;
+}
+
+// The ward shift key (spec 11.6): a rotating secret residents/admins generate.
+// History is retained — deactivated keys stay so offline queued actions can be
+// re-validated against the key that was active at their performedAt timestamp.
+export interface ShiftKey {
+  _id?: ObjectId;
+  key: string;
+  generatedBy: ObjectId;
+  generatedAt: Date;
+  deactivatedAt?: Date | null;
+  active: boolean;
+}
+
+// Attendance record (spec 11.8): one entry per user per day, upserted by an
+// admin/resident. Absent entries are explicit "marked-absent" marks.
+export interface Attendance {
+  _id?: ObjectId;
+  userId: ObjectId;
+  date: Date;
+  status: "present" | "absent";
+  note?: string | null;
+  markedBy: ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
 }

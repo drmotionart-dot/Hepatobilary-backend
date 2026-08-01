@@ -1,6 +1,7 @@
 import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
+import { resolveDayTypes } from "@/lib/day-type";
 import { ObjectId } from "mongodb";
 import type { ShiftAssignment, RoleSlotDefinition } from "@/lib/models/types";
 import { localDateKey } from "@/lib/shift";
@@ -148,10 +149,14 @@ async function bulkGenerate(from: string, to: string, userId: any) {
   end.setDate(end.getDate() + 1);
   if (start >= end) return Response.json({ error: "from must be before to" }, { status: 400 });
 
-  const dayTypes = await db.collection("dayTypeCalendar").find({ date: { $gte: start, $lt: end } }).toArray();
-  const dayTypeMap = new Map(
-    dayTypes.map((d: any) => [localDateKey(new Date(d.date)), d])
-  );
+  // Resolve day types across the range: stored DayTypeCalendar wins, otherwise
+  // weekday defaults (Thu→clinic, Sun/Wed→normal+surgeryOverlay, else normal).
+  const resolvedDays = await resolveDayTypes(Array.from({ length: Math.ceil((end.getTime() - start.getTime()) / 86400000) }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    return d;
+  }));
+  const resolvedMap = new Map(resolvedDays.map((r) => [localDateKey(r.date), r]));
 
   const slots = await db.collection<RoleSlotDefinition>("roleSlotDefinitions").find().toArray();
   const slotsByDayType = new Map<string, RoleSlotDefinition[]>();
@@ -173,8 +178,9 @@ async function bulkGenerate(from: string, to: string, userId: any) {
 
   for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
     const key = localDateKey(d);
-    const dayType = (dayTypeMap.get(key)?.dayType as string) || "normal";
-    const surgeryOverlay = dayTypeMap.get(key)?.surgeryOverlay || false;
+    const resolved = resolvedMap.get(key);
+    const dayType = resolved?.dayType || "normal";
+    const surgeryOverlay = resolved?.surgeryOverlay || false;
 
     let daySlots = slotsByDayType.get(dayType) || [];
     if (surgeryOverlay) {

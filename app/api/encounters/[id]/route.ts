@@ -68,7 +68,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  // Finalizing discharge / closing follow-ups — resident only (spec §7).
+  // Status transitions / admit-to-ward / type escalation — resident only (spec §7).
   const session = await requireRole(["resident"]);
   if (!session) return Response.json({ error: "Resident only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
@@ -79,8 +79,54 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const encounter = await db.collection<Encounter>("encounters").findOne({ _id: toObjectId(params.id) });
   if (!encounter) return Response.json({ error: "Not found" }, { status: 404 });
 
+  // Admit-to-ward SPAWNS a new ward encounter (spec §4.1 step 3) rather than
+  // mutating the emergency/clinic encounter's type. The source encounter closes;
+  // the ward encounter carries the patient forward.
+  if (body.action === "admit") {
+    if (!["male", "female"].includes(body.ward)) {
+      return Response.json({ error: "ward (male|female) is required to admit to ward" }, { status: 400 });
+    }
+    const now = new Date();
+    const wardDoc: Encounter = {
+      patientId: encounter.patientId,
+      type: "ward",
+      caseType: encounter.caseType,
+      customCaseTypeLabel: encounter.customCaseTypeLabel ?? null,
+      status: "active",
+      ward: body.ward,
+      openedAt: now,
+      closedAt: null,
+      openedBy: userId,
+      linkedFollowUpOf: null,
+    };
+    const res = await db.collection<Encounter>("encounters").insertOne(wardDoc);
+    await logAudit({
+      collection: "encounters",
+      documentId: res.insertedId,
+      action: "create",
+      summary: `Admitted patient from ${encounter.type} encounter to ${body.ward} ward (spawned ward encounter)`,
+      performedBy: userId,
+    });
+
+    await db.collection<Encounter>("encounters").updateOne(
+      { _id: encounter._id },
+      { $set: { status: "closed", closedAt: now } }
+    );
+    await logAudit({
+      collection: "encounters",
+      documentId: encounter._id,
+      action: "update",
+      summary: `Closed ${encounter.type} encounter after admit-to-ward`,
+      performedBy: userId,
+    });
+
+    const created = await db.collection<Encounter>("encounters").findOne({ _id: res.insertedId });
+    return Response.json({ ...created, spawnedFrom: encounter._id }, { status: 201 });
+  }
+
   const update: Record<string, unknown> = { ...body };
   delete update.patientId;
+  delete update.action;
 
   if (body.type && body.type !== encounter.type) {
     if (body.type === "ward") {
@@ -89,20 +135,35 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       }
       update.ward = body.ward;
     } else if (body.type === "emergency") {
+      // Spec §4.1 step 5: clinic → emergency escalation without re-entering data.
       update.ward = ["male", "female"].includes(body.ward) ? body.ward : null;
     } else {
       return Response.json({ error: "Invalid encounter type" }, { status: 400 });
     }
   }
 
-  if (body.status === "closed" || body.status === "discharged") {
+  if (body.status === "closed" || body.status === "discharged" || body.status === "referred-out") {
     update.closedAt = new Date();
   }
   if (body.status === "active") {
     update.closedAt = null;
   }
-  if (body.status === "follow-up-pending" && body.linkedFollowUpOf === undefined) {
-    update.linkedFollowUpOf = encounter._id;
+  // Follow-up linkage (spec §4): an explicit linkedFollowUpOf links a follow-up
+  // visit to its prior discharge encounter. Never self-link.
+  if ("linkedFollowUpOf" in body) {
+    if (body.linkedFollowUpOf === null || body.linkedFollowUpOf === undefined || body.linkedFollowUpOf === "") {
+      update.linkedFollowUpOf = null;
+    } else {
+      if (!isValidObjectId(body.linkedFollowUpOf)) {
+        return Response.json({ error: "Invalid linkedFollowUpOf" }, { status: 400 });
+      }
+      if (body.linkedFollowUpOf.toString() === encounter._id.toString()) {
+        return Response.json({ error: "An encounter cannot be linked to itself" }, { status: 400 });
+      }
+      const linked = await db.collection<Encounter>("encounters").findOne({ _id: toObjectId(body.linkedFollowUpOf) });
+      if (!linked) return Response.json({ error: "Linked follow-up encounter not found" }, { status: 404 });
+      update.linkedFollowUpOf = toObjectId(body.linkedFollowUpOf);
+    }
   }
 
   await db.collection<Encounter>("encounters").updateOne(

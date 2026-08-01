@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import { SHIFT_START_HOUR, activeShiftDate, localDateKey } from "@/lib/shift";
+import { resolveDayType, resolveDayTypes } from "@/lib/day-type";
 import type { Encounter, LabImport } from "@/lib/models/types";
 
 // Everything the frontend dashboard renders in one call: the live clock + the
@@ -19,9 +20,11 @@ export async function GET() {
   const endOfDay = new Date(startOfDay);
   endOfDay.setDate(endOfDay.getDate() + 1);
 
-  const dayTypeDoc = await db.collection("dayTypeCalendar").findOne({ date: { $gte: startOfDay, $lt: endOfDay } });
-  const dayType = (dayTypeDoc?.dayType as string) || "normal";
-  const surgeryOverlay = Boolean(dayTypeDoc?.surgeryOverlay);
+  // Stored DayTypeCalendar wins; otherwise weekday defaults (Thu→clinic,
+  // Sun/Wed→normal+surgeryOverlay, else normal).
+  const todayResolved = await resolveDayType(startOfDay);
+  const dayType = todayResolved.dayType;
+  const surgeryOverlay = todayResolved.surgeryOverlay;
 
   // Who's on shift now follows the 08:00 boundary: before 08:00 the previous
   // day's 24h shift (08:00 → 08:00) is still the active one.
@@ -50,6 +53,8 @@ export async function GET() {
       (a.userIds || []).map((u: any) => ({
         name: userMap.get(u.toString()) || "Unknown",
         category: slotMap.get(a.roleSlotDefinitionId.toString()) || "",
+        startTime: a.startTime || null,
+        endTime: a.endTime || null,
       }))
     )
     .filter((p: any) => p.name !== "Unknown");
@@ -73,31 +78,37 @@ export async function GET() {
     : [];
   const patientMap = new Map(patients.map((p: any) => [p._id.toString(), p]));
 
-  // Current-month summary for the calendar card: day type + how many people are
-  // assigned each day.
+  // Current-month summary for the calendar card: resolved day type (stored wins,
+  // weekday default otherwise) + how many people are assigned each day.
   const monthStart = new Date(startOfDay);
   monthStart.setDate(1);
   const monthEnd = new Date(monthStart);
   monthEnd.setMonth(monthEnd.getMonth() + 1);
 
-  const [monthCalendar, monthAssignments] = await Promise.all([
-    db.collection("dayTypeCalendar").find({ date: { $gte: monthStart, $lt: monthEnd } }).toArray(),
-    db.collection("shiftAssignments").find({ date: { $gte: monthStart, $lt: monthEnd } }).toArray(),
-  ]);
-  const monthMap = new Map(monthCalendar.map((c: any) => [localDateKey(c.date), c]));
+  const monthAssignments = await db.collection("shiftAssignments").find({ date: { $gte: monthStart, $lt: monthEnd } }).toArray();
   const assignedPerDay = new Map<string, number>();
   for (const a of monthAssignments as any[]) {
     if (!a.userIds || a.userIds.length === 0) continue;
     const key = localDateKey(a.date);
     assignedPerDay.set(key, (assignedPerDay.get(key) || 0) + a.userIds.length);
   }
+
+  const monthResolved = await resolveDayTypes(
+    Array.from({ length: Math.ceil((monthEnd.getTime() - monthStart.getTime()) / 86400000) }, (_, i) => {
+      const d = new Date(monthStart);
+      d.setDate(d.getDate() + i);
+      return d;
+    })
+  );
+  const resolvedByKey = new Map(monthResolved.map((r) => [localDateKey(r.date), r]));
   const monthDays: { date: string; dayType: string; surgeryOverlay: boolean; assigned: number }[] = [];
   for (let d = new Date(monthStart); d < monthEnd; d.setDate(d.getDate() + 1)) {
     const key = localDateKey(d);
+    const r = resolvedByKey.get(key);
     monthDays.push({
       date: key,
-      dayType: (monthMap.get(key)?.dayType as string) || "normal",
-      surgeryOverlay: Boolean(monthMap.get(key)?.surgeryOverlay),
+      dayType: r?.dayType || "normal",
+      surgeryOverlay: r?.surgeryOverlay || false,
       assigned: assignedPerDay.get(key) || 0,
     });
   }

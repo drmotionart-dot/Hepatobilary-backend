@@ -2,7 +2,8 @@ import { requireRole } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
 import { toObjectId } from "@/lib/api";
-import type { RosterImport, RosterImportRow, RoleSlotDefinition, User, DayTypeCalendar } from "@/lib/models/types";
+import { resolveDayTypes } from "@/lib/day-type";
+import type { RosterImport, RosterImportRow, RoleSlotDefinition, User } from "@/lib/models/types";
 import {
   classifyColumn,
   dateKey,
@@ -66,10 +67,20 @@ export async function POST(req: Request) {
     : null;
   if (dateRange) dateRange.to.setDate(dateRange.to.getDate() + 1);
 
-  const calendar: DayTypeCalendar[] = dateRange
-    ? await db.collection<DayTypeCalendar>("dayTypeCalendar").find({ date: { $gte: dateRange.from, $lt: dateRange.to } }).toArray()
-    : [];
-  const dayTypeMap = new Map(calendar.map((c) => [dateKey(new Date(c.date)), c.dayType]));
+  // Resolved day type per date across the sheet's range (stored calendar wins,
+  // weekday default otherwise — Thursday→clinic, Sun/Wed→normal+surgeryOverlay).
+  let dayTypeMap = new Map<string, string>();
+  if (dateRange) {
+    const dates = Array.from(
+      { length: Math.ceil((dateRange.to.getTime() - dateRange.from.getTime()) / 86400000) },
+      (_, i) => {
+        const d = new Date(dateRange.from);
+        d.setDate(d.getDate() + i);
+        return d;
+      }
+    );
+    dayTypeMap = new Map((await resolveDayTypes(dates)).map((r) => [dateKey(r.date), r.dayType]));
+  }
 
   const rows: RosterImportRow[] = [];
   const unmatched: RosterImportRow[] = [];

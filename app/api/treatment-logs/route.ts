@@ -1,6 +1,7 @@
 import { requireSession, requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
+import { requireShiftKeyForIntern } from "@/lib/shift-key";
 import type { TreatmentLog } from "@/lib/models/types";
 
 export async function GET(req: Request) {
@@ -25,6 +26,9 @@ export async function POST(req: Request) {
   const session = await requireRole(["intern", "resident"]);
   if (!session) return Response.json({ error: "Intern or resident only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
+
+  const gate = await requireShiftKeyForIntern(req, session);
+  if (!gate.allowed) return Response.json({ error: gate.message, code: gate.code }, { status: gate.status });
 
   const body = await req.json();
   const { encounterId, treatment, otherRecommendations, date } = body;
@@ -55,6 +59,8 @@ export async function POST(req: Request) {
       action: "update",
       summary: `Logged treatment: ${treatment}`,
       performedBy: userId,
+      shiftKey: gate.shiftKey,
+      shiftKeyMatched: gate.shiftKeyMatched,
     });
     const updated = await db.collection<TreatmentLog>("treatmentLogs").findOne({ _id: existing._id });
     return Response.json(updated);
@@ -68,6 +74,8 @@ export async function POST(req: Request) {
     action: "create",
     summary: `Started treatment log for encounter ${encounterId}`,
     performedBy: userId,
+    shiftKey: gate.shiftKey,
+    shiftKeyMatched: gate.shiftKeyMatched,
   });
   return Response.json({ ...doc, _id: res.insertedId }, { status: 201 });
 }

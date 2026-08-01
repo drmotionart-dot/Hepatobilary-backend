@@ -22,7 +22,9 @@ export function middleware(req: NextRequest) {
   if (originAllowed) {
     res.headers.set("Access-Control-Allow-Origin", origin);
     res.headers.set("Vary", "Origin");
-    res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    // x-shift-key is sent on intern-gated writes; x-sync-replay + x-performed-at
+    // on offline queue replays (spec 11.6). All must be allowed through preflight.
+    res.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-shift-key, x-sync-replay, x-performed-at");
     res.headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
     res.headers.set("Access-Control-Max-Age", "86400");
   }

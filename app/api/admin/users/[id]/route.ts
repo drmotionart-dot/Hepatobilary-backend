@@ -16,13 +16,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const update: Record<string, unknown> = { updatedAt: new Date() };
 
-  // Approve / remove / reinstate / expire are open to residents and admins
-  // (spec §11 — account lifecycle is a shared duty). Field-level edits
+  // Approve / reject / remove / reinstate / expire are open to residents and
+  // admins (spec §11 — account lifecycle is a shared duty). Field-level edits
   // (role, status, mustChangePassword) stay admin-only below.
   if (body.action === "approve") {
     update.status = "active";
     update.approvedBy = actingId;
     update.approvedAt = new Date();
+  } else if (body.action === "reject") {
+    update.status = "removed";
   } else if (body.action === "remove") {
     update.status = "removed";
   } else if (body.action === "expire") {
@@ -46,7 +48,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     collection: "users",
     documentId: user._id,
     action: "update",
-    summary: `Account action on ${user.loginId}: ${JSON.stringify(Object.keys(update))}`,
+    summary: `Account action on ${user.loginId}: ${body.action || Object.keys(body).join(", ")}`,
     performedBy: actingId,
   });
 

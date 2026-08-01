@@ -1,5 +1,6 @@
 import { requireRole } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
+import { resolveDayTypes } from "@/lib/day-type";
 import type { RoleSlotDefinition, ShiftAssignment, EmergencyDayPool, User } from "@/lib/models/types";
 import { dateKey } from "@/lib/roster-import";
 
@@ -24,13 +25,23 @@ export async function GET(req: Request) {
   else to.setDate(to.getDate() + 14);
 
   const db = await getDb();
-  const [slots, assignments, pools, users, calendar] = await Promise.all([
+  const [slots, assignments, pools, users] = await Promise.all([
     db.collection<RoleSlotDefinition>("roleSlotDefinitions").find().toArray(),
     db.collection<ShiftAssignment>("shiftAssignments").find({ date: { $gte: from, $lt: to } }).toArray(),
     db.collection<EmergencyDayPool>("emergencyDayPools").find({ date: { $gte: from, $lt: to } }).toArray(),
     db.collection<User>("users").find({}).project({ passwordHash: 0 }).toArray(),
-    db.collection("dayTypeCalendar").find({ date: { $gte: from, $lt: to } }).toArray(),
   ]);
+
+  // Resolved day types across the range (stored calendar wins, weekday default
+  // otherwise) so export matches what the roster actually shows.
+  const resolvedDays = await resolveDayTypes(
+    Array.from({ length: Math.ceil((to.getTime() - from.getTime()) / 86400000) }, (_, i) => {
+      const d = new Date(from);
+      d.setDate(d.getDate() + i);
+      return d;
+    })
+  );
+  const dayTypeMap = new Map(resolvedDays.map((r) => [dateKey(r.date), r.dayType]));
 
   const userMap = new Map(users.map((u) => [u._id!.toString(), u]));
   const userName = (id: string) => {
@@ -69,7 +80,6 @@ export async function GET(req: Request) {
     return assignment ? (assignment.userIds || []).map((id) => userName(id.toString())).filter(Boolean).join("\n") : "";
   }
 
-  const dayTypeMap = new Map(calendar.map((c: any) => [dateKey(new Date(c.date)), (c.dayType as string) || "normal"]));
   const aoa: (string | number)[][] = [["التاريخ (Date)", ...columnDefs.map((c) => c.header)]];
 
   for (let d = new Date(from); d < to; d.setDate(d.getDate() + 1)) {

@@ -9,7 +9,7 @@ import type { User } from "@/lib/models/types";
 // Password change — required on first login for bulk-generated accounts
 // (spec 10.3), also clears the mustChangePassword flag.
 export async function POST(req: Request) {
-  const session = await requireSession();
+  const session = await requireSession({ mustChangePasswordOK: true });
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const userId = toObjectId((session.user as any).id);
 

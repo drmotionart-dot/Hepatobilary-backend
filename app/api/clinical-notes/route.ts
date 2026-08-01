@@ -1,6 +1,7 @@
 import { requireSession, requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
+import { requireShiftKeyForIntern } from "@/lib/shift-key";
 import type { ClinicalNote } from "@/lib/models/types";
 
 export async function GET(req: Request) {
@@ -29,6 +30,11 @@ export async function POST(req: Request) {
   const session = await requireRole(["intern", "resident"]);
   if (!session) return Response.json({ error: "Intern or resident only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
+
+  // Shift-key gate (spec 11.6): interns must submit the current ward key on
+  // patient-data actions. Offline replays are accepted and flagged on mismatch.
+  const gate = await requireShiftKeyForIntern(req, session);
+  if (!gate.allowed) return Response.json({ error: gate.message, code: gate.code }, { status: gate.status });
 
   const body = await req.json();
   const { encounterId, context, presentingLine, pmhx, pshx, complaint, generalExam, localExam, riskFactors, investigationsOrdered, recommendation, treatmentOrders } = body;
@@ -97,6 +103,8 @@ export async function POST(req: Request) {
     action: "create",
     summary: `Clinical note (${context}) on encounter ${encounterId}`,
     performedBy: userId,
+    shiftKey: gate.shiftKey,
+    shiftKeyMatched: gate.shiftKeyMatched,
   });
 
   return Response.json({ ...doc, _id: res.insertedId }, { status: 201 });

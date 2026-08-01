@@ -1,14 +1,16 @@
 import { requireRole, toObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
+import { isCapability } from "@/lib/models/types";
 import type { RotationImport, RotationImportRow, User } from "@/lib/models/types";
 import { createBulkAccount, generateLoginId } from "@/lib/account-factory";
 import { normalizePhone } from "@/lib/roster-import";
 import { ObjectId } from "mongodb";
 
 // User management. GET lists all users for residents + admins (approvals and
-// account lifecycle are shared duties); POST creates accounts and stays
-// admin-only (single-user creation + Excel rotation bulk import).
+// account lifecycle are shared duties); POST creates accounts — the Excel
+// rotation bulk import is resident+admin (spec 10.2), single manual account
+// creation stays admin-only (spec 11.8).
 export async function GET() {
   const session = await requireRole(["admin", "resident"]);
   if (!session) return Response.json({ error: "Admin or resident only" }, { status: 403 });
@@ -24,20 +26,24 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const session = await requireRole(["admin"]);
-  if (!session) return Response.json({ error: "Admin only" }, { status: 403 });
-  const adminId = toObjectId((session.user as any).id);
+  const session = await requireRole(["admin", "resident"]);
+  if (!session) return Response.json({ error: "Admin or resident only" }, { status: 403 });
+  const actorId = toObjectId((session.user as any).id);
   const db = await getDb();
   const contentType = req.headers.get("content-type") || "";
 
   if (contentType.includes("multipart/form-data")) {
-    return await handleRotationImport(req, adminId);
+    return await handleRotationImport(req, actorId);
   }
 
-  // Single manual user creation (used by rotation import fallback too).
+  // Single manual account creation is an admin action (spec 11.8).
+  if (session.user.role !== "admin") {
+    return Response.json({ error: "Admin only" }, { status: 403 });
+  }
+
   // Phone is the canonical identity key: dedupe by phone first, then email.
   const body = await req.json();
-  const { fullName, email, role, password, phone } = body;
+  const { fullName, email, role, password, phone, grantedCapabilities } = body;
   if (!fullName || !role) {
     return Response.json({ error: "fullName and role are required" }, { status: 400 });
   }
@@ -56,6 +62,10 @@ export async function POST(req: Request) {
     (email ? await db.collection<User>("users").findOne({ loginId: loginId }) : null);
   if (existing) return Response.json({ error: "Account already exists for that phone or email" }, { status: 409 });
 
+  const caps = Array.isArray(grantedCapabilities)
+    ? (grantedCapabilities as unknown[]).filter((c) => isCapability(c))
+    : [];
+
   const bcrypt = await import("bcryptjs");
   const now = new Date();
   const user: User = {
@@ -67,11 +77,12 @@ export async function POST(req: Request) {
     passwordHash: await bcrypt.hash(password || "ChangeMe123", 10),
     accountType: "bulk-generated",
     status: "active",
-    approvedBy: adminId,
+    approvedBy: actorId,
     approvedAt: now,
     mustChangePassword: true,
     expiresAt: new Date(now.getTime() + 50 * 24 * 60 * 60 * 1000),
     rotationImportId: null,
+    ...(caps.length ? { grantedCapabilities: caps } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -81,8 +92,8 @@ export async function POST(req: Request) {
     collection: "users",
     documentId: res.insertedId,
     action: "create",
-    summary: `Admin created user ${fullName} (${loginId}, ${role})`,
-    performedBy: adminId,
+    summary: `Admin created user ${fullName} (${loginId}, ${role})` + (caps.length ? ` with capabilities ${caps.join(", ")}` : ""),
+    performedBy: actorId,
   });
 
   return Response.json({ ...user, _id: res.insertedId, password: password || "ChangeMe123" }, { status: 201 });
@@ -93,7 +104,7 @@ export async function POST(req: Request) {
 // Phone is the canonical identity key — a row whose phone already has an
 // account is reported as "existing", never duplicated. Email is optional;
 // people log in with the generated loginId (e.g. hpb01123456789).
-async function handleRotationImport(req: Request, adminId: any) {
+async function handleRotationImport(req: Request, actorId: ObjectId) {
   const formData = await req.formData();
   const file = formData.get("file") as File;
   if (!file) return Response.json({ error: "No file provided" }, { status: 400 });
@@ -150,7 +161,7 @@ async function handleRotationImport(req: Request, adminId: any) {
       email,
       role: "intern",
       rotationImportId: importId,
-      approvedBy: adminId,
+      approvedBy: actorId,
       usedLoginIds,
     });
 
@@ -180,7 +191,7 @@ async function handleRotationImport(req: Request, adminId: any) {
 
   const importDoc: RotationImport = {
     _id: importId,
-    uploadedBy: adminId,
+    uploadedBy: actorId,
     uploadedAt: now,
     sourceFileName: file.name,
     rows: importRows,
@@ -192,7 +203,7 @@ async function handleRotationImport(req: Request, adminId: any) {
     documentId: importId,
     action: "create",
     summary: `Rotation import "${file.name}": ${created} created, ${existing} already existed, ${importRows.length} total rows`,
-    performedBy: adminId,
+    performedBy: actorId,
   });
 
   return Response.json(

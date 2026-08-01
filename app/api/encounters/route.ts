@@ -51,7 +51,7 @@ export async function POST(req: Request) {
   const userId = toObjectId((session.user as any).id);
 
   const body = await req.json();
-  const { patientId, type, caseType, customCaseTypeLabel, ward, status } = body;
+  const { patientId, type, caseType, customCaseTypeLabel, ward, status, linkedFollowUpOf } = body;
   if (!patientId || !type || !caseType) {
     return Response.json({ error: "patientId, type and caseType are required" }, { status: 400 });
   }
@@ -72,6 +72,21 @@ export async function POST(req: Request) {
   const patient = await db.collection<Patient>("patients").findOne({ _id: toObjectId(patientId) });
   if (!patient) return Response.json({ error: "Patient not found" }, { status: 404 });
 
+  // Optional follow-up linkage (spec §4): opening a follow-up visit creates a
+  // clinic encounter that references the prior discharge via linkedFollowUpOf.
+  let linkedId: any = null;
+  if (linkedFollowUpOf) {
+    if (!isValidObjectId(linkedFollowUpOf)) {
+      return Response.json({ error: "Invalid linkedFollowUpOf" }, { status: 400 });
+    }
+    const prior = await db.collection<Encounter>("encounters").findOne({ _id: toObjectId(linkedFollowUpOf) });
+    if (!prior) return Response.json({ error: "Linked follow-up encounter not found" }, { status: 404 });
+    if (prior.patientId.toString() !== toObjectId(patientId).toString()) {
+      return Response.json({ error: "Follow-up link must reference the same patient" }, { status: 400 });
+    }
+    linkedId = toObjectId(linkedFollowUpOf);
+  }
+
   const now = new Date();
   const doc: Encounter = {
     patientId: toObjectId(patientId),
@@ -83,7 +98,7 @@ export async function POST(req: Request) {
     openedAt: now,
     closedAt: null,
     openedBy: userId,
-    linkedFollowUpOf: null,
+    linkedFollowUpOf: linkedId,
   };
   const res = await db.collection<Encounter>("encounters").insertOne(doc);
 

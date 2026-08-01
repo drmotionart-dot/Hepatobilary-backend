@@ -1,12 +1,16 @@
-import { requireSession, toObjectId, isValidObjectId } from "@/lib/api";
+import { requireRole, toObjectId, isValidObjectId } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { logAudit } from "@/lib/audit";
+import { requireShiftKeyForIntern } from "@/lib/shift-key";
 import type { ImagingRequest } from "@/lib/models/types";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await requireSession();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireRole(["intern", "resident"]);
+  if (!session) return Response.json({ error: "Intern or resident only" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
+
+  const gate = await requireShiftKeyForIntern(req, session);
+  if (!gate.allowed) return Response.json({ error: gate.message, code: gate.code }, { status: gate.status });
 
   const body = await req.json();
   const db = await getDb();
@@ -27,6 +31,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     action: "update",
     summary: `Updated imaging request: ${Object.keys(body).join(", ")}`,
     performedBy: userId,
+    shiftKey: gate.shiftKey,
+    shiftKeyMatched: gate.shiftKeyMatched,
   });
 
   const updated = await db.collection<ImagingRequest>("imagingRequests").findOne({ _id: existing._id });

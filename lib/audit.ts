@@ -10,6 +10,8 @@ export async function logAudit(entry: {
   action: "create" | "update" | "delete";
   summary: string;
   performedBy: ObjectId;
+  shiftKey?: string | null;
+  shiftKeyMatched?: boolean;
 }) {
   const doc: AuditLog = {
     ...entry,
