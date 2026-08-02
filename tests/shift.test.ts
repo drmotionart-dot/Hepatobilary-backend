@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { SHIFT_START_HOUR, activeShiftDate, dayRange, localDateKey } from "../lib/shift";
+import { SHIFT_START_HOUR, activeShiftDate, dayRange, isNightShift, localDateKey } from "../lib/shift";
 
 describe("shift model (spec §6)", () => {
   it("defines the 08:00 shift boundary", () => {
     expect(SHIFT_START_HOUR).toBe(8);
+  });
+
+  it("resolves night shift within 20:00–08:00, long shift otherwise", () => {
+    expect(isNightShift(new Date(2026, 7, 3, 6, 0))).toBe(true); // before 08:00
+    expect(isNightShift(new Date(2026, 7, 3, 7, 59))).toBe(true);
+    expect(isNightShift(new Date(2026, 7, 3, 8, 0))).toBe(false); // long shift starts
+    expect(isNightShift(new Date(2026, 7, 3, 19, 59))).toBe(false);
+    expect(isNightShift(new Date(2026, 7, 3, 20, 0))).toBe(true); // night shift starts
+    expect(isNightShift(new Date(2026, 7, 3, 23, 30))).toBe(true);
   });
 
   it("keys a date in local calendar parts", () => {

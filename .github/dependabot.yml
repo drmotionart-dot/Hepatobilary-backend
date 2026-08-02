@@ -22,3 +22,8 @@ updates:
         versions: [">=15"]
       - dependency-name: "eslint"
         versions: [">=9"]
+      # TypeScript 7 (the native compiler) breaks Next 14's @/ alias resolution
+      # at build ("Can't resolve '@/lib/...'") and exceeds the @typescript-eslint
+      # / eslint-config-next 14 peer range (< 6.1.0). Stay on 5.x.
+      - dependency-name: "typescript"
+        versions: [">=6"]

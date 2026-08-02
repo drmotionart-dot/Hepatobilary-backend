@@ -1,5 +1,18 @@
+import "@/lib/tz";
+
 // Shift model (spec §6): a 24-hour shift starts and ends at 08:00 local time.
+// Its two halves are the LONG shift (08:00–20:00) and the NIGHT shift
+// (20:00–08:00). The shift-day date is keyed at local midnight (see
+// activeShiftDate) and the label picks the half the clock is currently in.
 export const SHIFT_START_HOUR = 8;
+export const NIGHT_START_HOUR = 20;
+
+// True while the night half (20:00 → 08:00) is on the clock. Used by the
+// dashboard to say "Night shift" vs "Long shift".
+export function isNightShift(now: Date = new Date()): boolean {
+  const h = now.getHours();
+  return h < SHIFT_START_HOUR || h >= NIGHT_START_HOUR;
+}
 
 // Calendar date key (YYYY-MM-DD) in LOCAL time, matching how the frontend keys
 // roster days. Shift dates are stored at local midnight and would otherwise

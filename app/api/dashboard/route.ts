@@ -1,7 +1,7 @@
 import { requireSession } from "@/lib/api";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
-import { SHIFT_START_HOUR, activeShiftDate, localDateKey } from "@/lib/shift";
+import { NIGHT_START_HOUR, SHIFT_START_HOUR, activeShiftDate, isNightShift, localDateKey } from "@/lib/shift";
 import { resolveDayType, resolveDayTypes, slotAppliesOnDay } from "@/lib/day-type";
 import type { Encounter, LabImport, RoleSlotDefinition, ShiftAssignment } from "@/lib/models/types";
 
@@ -156,8 +156,9 @@ export async function GET() {
     serverNow: now.toISOString(),
     shift: {
       startHour: SHIFT_START_HOUR,
+      nightStartHour: NIGHT_START_HOUR,
       activeDateKey: localDateKey(activeStart),
-      beforeStart: now.getHours() < SHIFT_START_HOUR,
+      isNight: isNightShift(now),
     },
     month: { days: monthDays },
   });

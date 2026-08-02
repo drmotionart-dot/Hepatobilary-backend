@@ -1,3 +1,4 @@
+import "@/lib/tz";
 import { MongoClient, Db } from "mongodb";
 
 // Mongo connection is resolved lazily — at first getDb() call, never at module
