@@ -11,7 +11,8 @@
     "seed": "tsx scripts/seed.ts",
     "seed:mappings": "tsx scripts/seed-lab-mappings.ts",
     "migrate:shift-userids": "tsx scripts/migrate-shift-userids.ts",
-    "migrate:identity": "tsx scripts/migrate-identity.ts"
+    "migrate:identity": "tsx scripts/migrate-identity.ts",
+    "load-test": "tsx scripts/load-test.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
