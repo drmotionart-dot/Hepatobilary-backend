@@ -58,6 +58,8 @@ function ensureIndexes(db: Db): Promise<void> {
       db.collection("shiftKeys").createIndex({ active: 1, generatedAt: -1 }),
       db.collection("shiftKeys").createIndex({ key: 1 }, { unique: true }),
       db.collection("attendance").createIndex({ userId: 1, date: 1 }, { unique: true }),
+      db.collection("problemReports").createIndex({ createdAt: -1 }),
+      db.collection("problemReports").createIndex({ status: 1, createdAt: -1 }),
     ])
       .then(() => undefined)
       .catch((err) => {

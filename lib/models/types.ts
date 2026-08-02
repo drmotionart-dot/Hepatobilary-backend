@@ -402,3 +402,19 @@ export interface Attendance {
   createdAt: Date;
   updatedAt: Date;
 }
+
+// Staff "report a problem" (top-bar button, all authenticated roles). Intended
+// to be low-friction mid-shift — NO shift-key gate. Visible to residents/admins
+// under the Admin hub, where it can be marked resolved.
+export interface ProblemReport {
+  _id?: ObjectId;
+  description: string;
+  url?: string | null; // page the staff member was on when they reported (client-captured)
+  role: Role;
+  performedBy: ObjectId;
+  status: "open" | "resolved";
+  correlationId?: string | null; // ties the report to the server request log (spec 16.5)
+  resolvedBy?: ObjectId | null;
+  resolvedAt?: Date | null;
+  createdAt: Date;
+}
