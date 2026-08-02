@@ -104,6 +104,21 @@ async function main() {
     await page.waitForSelector("text=Thanks — report sent", { timeout: 20000 });
     console.log("[intern] success state shown");
 
+    // ---- Verify the stored report carries auto-collected diagnostics ----
+    const stored = await db.collection("problemReports").findOne({ description: { $regex: marker } });
+    if (!stored) throw new Error("report not persisted");
+    const storedCtx = stored.context || {};
+    const ctxChecks = {
+      roleIntern: stored.role === "intern",
+      urlDashboard: String(stored.url || "").includes("/dashboard"),
+      correlationId: typeof stored.correlationId === "string" && stored.correlationId.length > 0,
+      timezone: typeof storedCtx.timezone === "string" && storedCtx.timezone.length > 0,
+      deviceType: ["desktop", "mobile", "tablet"].includes(storedCtx.deviceType),
+      recentConsoleArray: Array.isArray(storedCtx.recentConsole),
+    };
+    console.log("[db] context checks:", ctxChecks);
+    if (!Object.values(ctxChecks).every(Boolean)) throw new Error("report context incomplete: " + JSON.stringify(ctxChecks));
+
     // ---- Admin UI ----
     const ctx2 = await browser.newContext();
     await ctx2.addCookies([{ name: "token", value: adminToken, domain: "localhost", path: "/" }]);
@@ -120,6 +135,22 @@ async function main() {
     };
     console.log("[admin] row checks:", checks);
     if (!Object.values(checks).every(Boolean)) throw new Error("admin row missing expected context: " + JSON.stringify(checks));
+
+    // ---- Details modal shows the full auto-collected diagnostics ----
+    await row.getByRole("button", { name: "Details" }).click();
+    const modal = page2.locator('[role="dialog"][aria-label="Problem report details"]');
+    await modal.waitFor({ timeout: 15000 });
+    const modalText = await modal.textContent();
+    const modalChecks = {
+      description: modalText.includes("Ward list not updating"),
+      device: modalText.includes("Device"),
+      correlation: modalText.includes("Correlation ID"),
+      consoleLogs: modalText.includes("Recent console"),
+      copyButton: (await modal.getByRole("button", { name: "Copy full report" }).count()) > 0,
+    };
+    console.log("[admin] details modal checks:", modalChecks);
+    if (!Object.values(modalChecks).every(Boolean)) throw new Error("details modal incomplete: " + JSON.stringify(modalChecks));
+    await modal.getByRole("button", { name: "Close" }).click();
 
     // ---- Mark resolved ----
     await row.getByRole("button", { name: "Mark resolved" }).click();

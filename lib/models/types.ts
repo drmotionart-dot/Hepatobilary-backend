@@ -403,6 +403,21 @@ export interface Attendance {
   updatedAt: Date;
 }
 
+// Client-captured diagnostics attached to a problem report so a developer can
+// reproduce/fix the issue from the report alone (paste into an AI agent).
+export interface ProblemReportContext {
+  ua?: string | null; // navigator.userAgent
+  language?: string | null; // navigator.language
+  platform?: string | null; // navigator.platform
+  timezone?: string | null; // Intl timeZone, e.g. Africa/Cairo
+  screen?: string | null; // e.g. "1440x900"
+  viewport?: string | null; // e.g. "1280x720"
+  deviceType?: string | null; // desktop | mobile | tablet
+  localTime?: string | null; // reporter's local wall-clock at submit
+  pendingOffline?: number; // queued offline mutations at submit (spec 8)
+  recentConsole: { level: "log" | "warn" | "error"; message: string; at: string }[]; // last N browser log lines
+}
+
 // Staff "report a problem" (top-bar button, all authenticated roles). Intended
 // to be low-friction mid-shift — NO shift-key gate. Visible to residents/admins
 // under the Admin hub, where it can be marked resolved.
@@ -410,6 +425,10 @@ export interface ProblemReport {
   _id?: ObjectId;
   description: string;
   url?: string | null; // page the staff member was on when they reported (client-captured)
+  referer?: string | null; // server-captured Referer
+  ua?: string | null; // server-captured User-Agent
+  ip?: string | null; // server-captured client address (x-forwarded-for / x-real-ip)
+  context?: ProblemReportContext; // client diagnostic snapshot
   role: Role;
   performedBy: ObjectId;
   status: "open" | "resolved";
