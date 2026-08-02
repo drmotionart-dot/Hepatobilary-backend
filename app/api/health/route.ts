@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/mongodb";
+import { DEPARTMENT_TZ } from "@/lib/tz";
 
 // GET /api/health — unauthenticated liveness + DB reachability probe for load
 // tests, uptime checks and the runbook. No data, no credentials needed.
@@ -15,6 +16,8 @@ export async function GET() {
       db: "connected",
       latencyMs: Date.now() - startedAt,
       time: new Date().toISOString(),
+      tz: DEPARTMENT_TZ,
+      localTime: new Date().toLocaleString("en-GB", { hour12: true }),
     });
   } catch {
     return Response.json(
@@ -23,6 +26,8 @@ export async function GET() {
         db: "unreachable",
         latencyMs: Date.now() - startedAt,
         time: new Date().toISOString(),
+        tz: DEPARTMENT_TZ,
+        localTime: new Date().toLocaleString("en-GB", { hour12: true }),
       },
       { status: 503 }
     );
