@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  MONGODB_URI: mongodb://localhost:27017/hpb-ci
+  MONGODB_DB: hpb-ci
+  JWT_SECRET: ci-only-dummy-secret-0123456789abcdef0123456789abcdef
+  FRONTEND_URL: http://localhost:3000
+
+jobs:
+  build-and-test:
+    name: Build, typecheck, lint & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm run test --if-present
