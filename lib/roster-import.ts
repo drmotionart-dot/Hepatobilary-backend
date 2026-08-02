@@ -1,6 +1,8 @@
 // Shared parsing helpers for the Wardyati rotation-roster import (spec 6.1).
 // Pure functions — no DB access — so the import and review routes reuse them.
 
+import type { ObjectId } from "mongodb";
+
 export type ColumnTarget = {
   shift: "long" | "night" | null;
   category: "clinic" | "ward-prep" | "none";
@@ -110,4 +112,93 @@ export function parseEntryLines(cell: unknown): Entry[] {
 
 export function dateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// ---- sheet-structure helpers (pure, shared by import + review flows) ----
+
+// Locate the header row (a row where column 0 is not a date and the columns
+// classify as shift columns), returning it plus the first data row index.
+export function findHeaderRow(aoa: unknown[][]): { headerRow: string[] | null; dataStartRow: number } {
+  const lookback = Math.min(aoa.length, 6);
+  for (let i = 0; i < lookback; i++) {
+    const row = aoa[i];
+    if (!row || row.every((c) => c == null || String(c).trim() === "")) continue;
+    const first = String(row[0] || "").trim();
+    const firstIsDate = parseDateCell(row[0]) !== null;
+    if (!firstIsDate) {
+      const rest = row.slice(1).map((c) => String(c || "").trim()).filter(Boolean);
+      const looksLikeHeader = /^(التاريخ|اليوم|date|day)/i.test(first) || rest.some((c) => classifyColumn(c).shift !== null);
+      if (looksLikeHeader) {
+        return { headerRow: row.map((c) => String(c || "").trim()), dataStartRow: i + 1 };
+      }
+    }
+  }
+  return { headerRow: null, dataStartRow: 0 };
+}
+
+export function buildColumnMap(headerRow: string[] | null): { col: number; target: ColumnTarget }[] {
+  if (headerRow) {
+    return headerRow
+      .slice(1)
+      .map((h, i) => ({ col: i + 1, target: classifyColumn(h) }))
+      .filter((c) => c.target.shift !== null || c.target.category !== "none");
+  }
+  // No header row — assume the Wardyati column order: Long, Night, Clinic, Ward prep.
+  return [
+    { col: 1, target: { shift: "long", category: "none", emergencyRoute: false } },
+    { col: 2, target: { shift: "night", category: "none", emergencyRoute: false } },
+    { col: 3, target: { shift: "long", category: "clinic", emergencyRoute: false } },
+    { col: 4, target: { shift: "long", category: "ward-prep", emergencyRoute: false } },
+  ];
+}
+
+export function firstDateCell(row: unknown[]): { date: Date; index: number } | null {
+  for (let i = 0; i < Math.min(row.length, 4); i++) {
+    const d = parseDateCell(row[i]);
+    if (d) return { date: d, index: i };
+  }
+  return null;
+}
+
+// Resolve a sheet entry to a known user id: phone first (normalized), name as
+// fallback. Returns null when neither matches.
+export function matchUser(name: string, phone: string, phoneMap: Map<string, string>, nameMap: Map<string, string>): string | null {
+  if (phone) {
+    const hit = phoneMap.get(normalizePhone(phone));
+    if (hit) return hit;
+  }
+  if (name) {
+    const nk = normalizeName(name);
+    if (nk) {
+      const hit = nameMap.get(nk);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+export interface SlotLike {
+  _id?: ObjectId;
+  dayType: string;
+  shiftType: string;
+  category: string;
+}
+
+// The exact slot id for a (dayType, shift, category) triple, falling back to
+// any slot of that dayType+shift when the exact category slot is missing.
+export function slotKey(slots: SlotLike[], dayType: string, shift: string | null, category: string): ObjectId | null {
+  if (!shift) return null;
+  const exact = slots.find((s) => s.dayType === dayType && s.shiftType === shift && s.category === category);
+  if (exact) return exact._id || null;
+  return slots.find((s) => s.dayType === dayType && s.shiftType === shift)?._id || null;
+}
+
+export function slotKeyByCategory(slots: SlotLike[], category: string): ObjectId | null {
+  return slots.find((s) => s.category === category)?._id || null;
+}
+
+export function targetCategoryLabel(target: ColumnTarget): string {
+  if (target.category === "ward-prep") return "slot:ward-prep";
+  if (target.category === "clinic") return `slot:${target.shift}-clinic`;
+  return `slot:${target.shift}`;
 }

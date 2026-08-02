@@ -17,3 +17,16 @@ export function activeShiftDate(now = new Date()): Date {
   if (now.getHours() < SHIFT_START_HOUR) d.setDate(d.getDate() - 1);
   return d;
 }
+
+// Local-midnight start + exclusive end for a calendar date string, or null when
+// the date is unparseable. Shift dates are stored at local midnight, so every
+// day-scoped lookup (assignments, absent, day-type calendar) uses this exact
+// [start, end) window.
+export function dayRange(date: string): { start: Date; end: Date } | null {
+  const start = new Date(date);
+  if (Number.isNaN(start.getTime())) return null;
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
