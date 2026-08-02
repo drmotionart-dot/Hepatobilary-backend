@@ -7,3 +7,18 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
+    ignore:
+      # Next 14 and React 18 are version-locked together in this app. React 19
+      # cannot install with next 14 (peer-dep ERESOLVE), and eslint-config-next
+      # >= 15 requires eslint >= 9 + flat config. Let Dependabot stop opening
+      # PRs that cannot install.
+      - dependency-name: "next"
+        versions: [">=15"]
+      - dependency-name: "react"
+        versions: [">=19"]
+      - dependency-name: "react-dom"
+        versions: [">=19"]
+      - dependency-name: "eslint-config-next"
+        versions: [">=15"]
+      - dependency-name: "eslint"
+        versions: [">=9"]

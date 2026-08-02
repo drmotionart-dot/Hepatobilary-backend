@@ -8,12 +8,22 @@ import type { Role, Capability } from "@/lib/models/types";
 // from the `Authorization: Bearer <token>` header (no cookies/sessions), so
 // the frontend and backend can live on separate origins.
 
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET || JWT_SECRET.length < 32 || JWT_SECRET.includes("replace-with-a-random")) {
-  throw new Error("Missing or weak JWT_SECRET — copy .env.example to .env.local and set a random 32+ byte secret.");
+// Validate the signing secret lazily — at first use, never at module import.
+// next build evaluates route modules during page-data collection, so a
+// missing/weak secret at import time would fail EVERY env-less build (e.g.
+// previews). With this, import always succeeds and a request that actually
+// needs auth throws a clear error instead.
+let jwtSecretKey: Uint8Array | null = null;
+function getSecretKey(): Uint8Array {
+  if (!jwtSecretKey) {
+    const secret = process.env.JWT_SECRET;
+    if (!secret || secret.length < 32 || secret.includes("replace-with-a-random")) {
+      throw new Error("Missing or weak JWT_SECRET — copy .env.example to .env.local and set a random 32+ byte secret.");
+    }
+    jwtSecretKey = new TextEncoder().encode(secret);
+  }
+  return jwtSecretKey;
 }
-const secretKey = new TextEncoder().encode(JWT_SECRET);
 
 export interface AuthUser {
   id: string;
@@ -40,7 +50,7 @@ export async function requireSession(opts?: { mustChangePasswordOK?: boolean }):
   if (!token) return null;
 
   try {
-    const { payload } = await jwtVerify(token, secretKey, { algorithms: ["HS256"] });
+    const { payload } = await jwtVerify(token, getSecretKey(), { algorithms: ["HS256"] });
     if (!payload.sub) return null;
     const mustChangePassword = Boolean(payload.mustChangePassword);
     if (mustChangePassword && !opts?.mustChangePasswordOK) return null;

@@ -1,10 +1,17 @@
 import { MongoClient, Db } from "mongodb";
 
-const uri = process.env.MONGODB_URI;
-const dbName = process.env.MONGODB_DB || "hpb";
-
-if (!uri) {
-  throw new Error("Missing MONGODB_URI — copy .env.example to .env.local and fill it in.");
+// Mongo connection is resolved lazily — at first getDb() call, never at module
+// import. next build evaluates route modules during page-data collection, so a
+// missing MONGODB_URI at import time would fail every env-less build (e.g.
+// preview deployments without env vars). Real requests in a deployed
+// environment always have the env var set.
+function getConfig(): { uri: string; dbName: string } {
+  const uri = process.env.MONGODB_URI;
+  const dbName = process.env.MONGODB_DB || "hpb";
+  if (!uri) {
+    throw new Error("Missing MONGODB_URI — copy .env.example to .env.local and fill it in.");
+  }
+  return { uri, dbName };
 }
 
 // The client lives on globalThis so Next dev hot-reloads never orphan a cached
@@ -18,8 +25,8 @@ const globalForMongo = globalThis as unknown as { _hpbMongoClient?: MongoClient 
 // Bound the pool: this app is low-traffic, one or two sockets are plenty, and a
 // hard cap keeps a single instance from ballooning toward the 100-connection
 // driver default. Idle sockets are returned after a minute.
-function createClient(): MongoClient {
-  return new MongoClient(uri as string, {
+function createClient(uri: string): MongoClient {
+  return new MongoClient(uri, {
     maxPoolSize: 10,
     minPoolSize: 0,
     maxIdleTimeMS: 60_000,
@@ -60,10 +67,11 @@ function ensureIndexes(db: Db): Promise<void> {
 }
 
 export async function getDb(): Promise<Db> {
+  const { uri, dbName } = getConfig();
   const cached = globalForMongo._hpbMongoClient;
   if (cached) return cached.db(dbName);
 
-  const client = createClient();
+  const client = createClient(uri);
   await client.connect();
   globalForMongo._hpbMongoClient = client;
   const db = client.db(dbName);
