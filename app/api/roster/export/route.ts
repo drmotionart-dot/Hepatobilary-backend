@@ -12,7 +12,7 @@ export async function GET(req: Request) {
   const session = await requireCapability("manage-roster");
   if (!session) return Response.json({ error: "Requires the manage-roster capability" }, { status: 403 });
 
-  return handleRoute(async () => {
+  return handleRoute(req, async () => {
     const url = new URL(req.url);
     const fromParam = url.searchParams.get("from");
     const toParam = url.searchParams.get("to");

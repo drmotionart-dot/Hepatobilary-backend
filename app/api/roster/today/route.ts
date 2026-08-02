@@ -7,11 +7,11 @@ import { getToday } from "@/lib/services/rosterService";
 // then return the assignments for that day grouped by shift window. Uses the
 // same 08:00 → 08:00 shift boundary as the dashboard, so before 08:00 "on
 // shift now" means the previous calendar day.
-export async function GET() {
+export async function GET(req: Request) {
   const session = await requireSession();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  return handleRoute(async () => {
+  return handleRoute(req, async () => {
     const db = await getDb();
     const today = await getToday(db);
     return Response.json(today);

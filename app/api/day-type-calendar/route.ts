@@ -7,7 +7,7 @@ export async function GET(req: Request) {
   const session = await requireRole(["intern", "resident", "admin"]);
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  return handleRoute(async () => {
+  return handleRoute(req, async () => {
     const url = new URL(req.url);
     const from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   if (!session) return Response.json({ error: "Requires the set-day-type-calendar capability" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
-  return handleRoute(async () => {
+  return handleRoute(req, async () => {
     const body = await req.json();
     const db = await getDb();
     const { doc, status } = await setDayType(db, body, userId);

@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   if (!session) return Response.json({ error: "Requires the manage-roster capability" }, { status: 403 });
   const importerId = toObjectId((session.user as any).id);
 
-  return handleRoute(async () => {
+  return handleRoute(req, async () => {
     const formData = await req.formData();
     const file = formData.get("file") as File;
     if (!file) return Response.json({ error: "No file provided" }, { status: 400 });

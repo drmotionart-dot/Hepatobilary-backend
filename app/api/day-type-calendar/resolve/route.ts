@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   const session = await requireSession();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  return handleRoute(async () => {
+  return handleRoute(req, async () => {
     const url = new URL(req.url);
     const dateParam = url.searchParams.get("date");
     const resolved = await resolveDayTypeForDate(dateParam);

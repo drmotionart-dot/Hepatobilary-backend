@@ -15,11 +15,11 @@ import {
 // on the spot (spec 6.1 step 4). "Create accounts" reuses the exact same
 // bulk-account generation as the rotation Excel import (spec 10.2), so a
 // person only ever needs one account no matter which import meets them first.
-export async function GET() {
+export async function GET(req: Request) {
   const session = await requireCapability("manage-roster");
   if (!session) return Response.json({ error: "Requires the manage-roster capability" }, { status: 403 });
 
-  return handleRoute(async () => {
+  return handleRoute(req, async () => {
     const db = await getDb();
     const queue = await listReviewQueue(db);
     return Response.json(queue);
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   if (!session) return Response.json({ error: "Requires the manage-roster capability" }, { status: 403 });
   const actorId = toObjectId((session.user as any).id);
 
-  return handleRoute(async () => {
+  return handleRoute(req, async () => {
     const body = await req.json();
     const db = await getDb();
     const { importId, rowIndex, action } = body;

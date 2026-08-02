@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   if (!session) return Response.json({ error: "Requires the manage-roster capability" }, { status: 403 });
   const actingId = toObjectId((session.user as any).id);
 
-  return handleRoute(async () => {
+  return handleRoute(req, async () => {
     const body = await req.json();
     const db = await getDb();
     const updated = await markAbsent(db, body, actingId);
@@ -27,7 +27,7 @@ export async function DELETE(req: Request) {
   if (!session) return Response.json({ error: "Requires the manage-roster capability" }, { status: 403 });
   const actingId = toObjectId((session.user as any).id);
 
-  return handleRoute(async () => {
+  return handleRoute(req, async () => {
     const body = await req.json();
     const db = await getDb();
     const updated = await clearAbsent(db, body, actingId);

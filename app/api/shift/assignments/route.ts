@@ -7,7 +7,7 @@ export async function GET(req: Request) {
   const session = await requireRole(["intern", "resident", "admin"]);
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  return handleRoute(async () => {
+  return handleRoute(req, async () => {
     const url = new URL(req.url);
     const date = url.searchParams.get("date");
     const db = await getDb();
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   if (!session) return Response.json({ error: "Requires the manage-roster capability" }, { status: 403 });
   const userId = toObjectId((session.user as any).id);
 
-  return handleRoute(async () => {
+  return handleRoute(req, async () => {
     const body = await req.json();
     const db = await getDb();
 

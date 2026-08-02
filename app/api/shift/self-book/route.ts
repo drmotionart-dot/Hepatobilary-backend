@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   const session = await requireRole(["intern"]);
   if (!session) return Response.json({ error: "Interns only" }, { status: 403 });
 
-  return handleRoute(async () => {
+  return handleRoute(req, async () => {
     const body = await req.json();
     const db = await getDb();
     const { doc, status } = await selfBook(db, body, session.user);
